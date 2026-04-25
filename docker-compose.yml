@@ -1,0 +1,23 @@
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    # For development with hot-reload, uncomment the volume mount below:
+    # volumes:
+    #   - ./api:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  web:
+    build:
+      context: ./web
+    ports:
+      - "5174:80"
+    depends_on:
+      - api
