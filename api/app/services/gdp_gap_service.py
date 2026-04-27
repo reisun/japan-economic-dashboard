@@ -555,6 +555,14 @@ async def get_gdp_gap() -> GdpGapResponse:
 
     # Real GDP -> HP-filter estimation (平均概念) と 最大概念
     real_gdp_result = _fetch_real_gdp()
+    using_real_gdp = real_gdp_result is not None
+    logger.info(
+        "gdp_gap data sources: %s",
+        {
+            "boj_output_gap": "real" if using_real_boj else "mock",
+            "fred_real_gdp": "real" if using_real_gdp else "mock",
+        },
+    )
     try:
         if real_gdp_result is not None:
             gdp_values, quarters = real_gdp_result

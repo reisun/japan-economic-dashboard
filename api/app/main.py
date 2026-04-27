@@ -1,10 +1,28 @@
 """FastAPI application for Japan Economic Dashboard."""
 
+import logging
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.models.schemas import HealthResponse
 from app.routers import fund_demand, gdp_gap, inflation, prediction, rates
+
+# アプリ全体のロガー設定（uvicorn のデフォルトでは app.* の INFO ログが出ないため、
+# 明示的にハンドラを app ロガーに付与する）。
+# 各サービスの実データ取得成否（real / mock）を運用ログに残すために必要。
+_log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+_handler = logging.StreamHandler()
+_handler.setFormatter(
+    logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+)
+_app_logger = logging.getLogger("app")
+_app_logger.setLevel(_log_level)
+# 二重登録を防止
+if not any(isinstance(h, logging.StreamHandler) for h in _app_logger.handlers):
+    _app_logger.addHandler(_handler)
+_app_logger.propagate = False
 
 app = FastAPI(
     title="Japan Economic Dashboard API",

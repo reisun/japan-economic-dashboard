@@ -164,17 +164,27 @@ def _fetch_flow_of_funds() -> list[FlowOfFundsDataPoint] | None:
 
 
 async def get_fund_demand() -> FundDemandResponse:
-    """Return fund demand data. Falls back to mock on failure."""
+    """Return fund demand data. Falls back to mock on failure.
+
+    各系列の取得成否（real / mock）はログに記録する。
+    flow_of_funds は BOJ CSV 形式が複雑で URL 検証要 (TODO)、現状常にモック。
+    """
+
+    status: dict[str, str] = {}
 
     # Bank lending (via FRED)
     lending_data = _fetch_bank_lending()
+    status["bank_lending"] = "real" if lending_data else "mock"
     if lending_data is None:
         lending_data = [BankLendingDataPoint(**d) for d in _MOCK_BANK_LENDING]
 
     # Flow of funds (BOJ CSV -- likely falls back to mock)
     flow_data = _fetch_flow_of_funds()
+    status["flow_of_funds"] = "real" if flow_data else "mock"
     if flow_data is None:
         flow_data = [FlowOfFundsDataPoint(**d) for d in _MOCK_FLOW_OF_FUNDS]
+
+    logger.info("fund_demand data sources: %s", status)
 
     # 共通レンジ（GDPギャップ実績期間）に揃える
     lending_data = filter_to_actual_range(lending_data, label="bank_lending")
