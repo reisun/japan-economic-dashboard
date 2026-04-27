@@ -123,25 +123,43 @@ QUARTERS = [d["date"] for d in MOCK_CABINET_DATA]
 
 
 # ---------------------------------------------------------------------------
-# 最大概念潜在GDP: Cobb-Douglas 生産関数アプローチ（生産関数による直接推計）
+# 最大概念潜在GDP: CBO methodology 準拠 Cobb-Douglas
 # ---------------------------------------------------------------------------
-# Y_potential_t = A_trend_t * (L_full_t)^(1-α) * (K_t)^α
-#   α=0.33（資本分配率, 日本標準）
-#   NAIRU=2.5%（構造的失業率）
-#   A_t = Y_t / (L_t^(1-α) * K_t^α) を実績から逆算 → HP平滑化
-#   L_full = 労働力人口 × 平均労働時間 × (1-NAIRU)
+# Y_potential_t = A_max_t * (L_full_t)^(1-α) * (K_services_full_t)^α
+#   α=0.33                  資本分配率（日本: 労働分配率2/3 → 1-2/3）
+#   NAIRU=2.5%              構造的失業率（日本標準）
+#   UTILIZATION_FULL=0.95   完全稼働率（鉱工業稼働率ピーク帯の代理値）
+#
+# 労働投入の分解 (CBO 流):
+#   L_full = 労働力人口 × LFPR_trend × HOURS_trend × (1 - NAIRU)
+#   LFPR と HOURS は HP λ=1600 でトレンド抽出
+# 資本サービス:
+#   K_services_full = K_stock × UTILIZATION_FULL
+# TFP:
+#   A_implied = Y / (L_actual^(1-α) × K_services_actual^α)
+#   A_max = 累積max( max(HP_trend(A_implied), A_implied) )
+#
 # 実データ差し替え点:
-#   - 労働力人口/労働時間/失業率: 総務省統計局・厚労省毎月勤労統計
+#   - 労働力人口/LFPR/失業率: 総務省統計局「労働力調査」
+#   - 平均労働時間: 厚労省「毎月勤労統計」
 #   - 民間資本ストック: 内閣府SNA系列
+#   - 稼働率: 経産省「鉱工業指数」稼働率指数
 # ---------------------------------------------------------------------------
 
 _CD_ALPHA = 0.33
 _NAIRU = 0.025
+_UTILIZATION_FULL = 0.95
 
 MOCK_LABOR_FORCE = [
     69.0, 69.0, 68.9, 68.8,
     68.8, 68.7, 68.6, 68.5,
     68.5, 68.4, 68.3, 68.2,
+]
+# LFPR (労働参加率, 比率): 高齢化と女性就業拡大の合成で緩やかに上昇
+MOCK_LFPR = [
+    0.625, 0.626, 0.627, 0.628,
+    0.628, 0.629, 0.629, 0.630,
+    0.630, 0.631, 0.631, 0.632,
 ]
 MOCK_HOURS = [
     138.0, 138.5, 138.8, 139.0,
@@ -157,6 +175,12 @@ MOCK_CAPITAL_STOCK = [
     1860.0, 1865.0, 1870.0, 1876.0,
     1882.0, 1888.0, 1895.0, 1902.0,
     1908.0, 1914.0, 1920.0, 1926.0,
+]
+# 実績資本稼働率（比率, 鉱工業稼働率指数の代理）
+MOCK_UTILIZATION = [
+    0.91, 0.92, 0.92, 0.93,
+    0.93, 0.93, 0.92, 0.92,
+    0.91, 0.90, 0.90, 0.89,
 ]
 
 
@@ -175,9 +199,11 @@ def _estimate_average(real_gdp, quarters):
 
 
 def _estimate_maximum(real_gdp, quarters):
-    """最大概念: Cobb-Douglas 生産関数アプローチ。
-    完全雇用ベースの労働投入と実績資本ストックを用いて潜在GDPを直接推計。
-    実績失業率 ≥ NAIRU である限り構造的に gap ≤ 0 となる。"""
+    """最大概念: CBO methodology 準拠 Cobb-Douglas。
+    L_full = 労働力人口 × LFPR_trend × HOURS_trend × (1-NAIRU)
+    K_services = K_stock × UTILIZATION_FULL
+    A_max = 累積max(max(HP_trend(A_implied), A_implied))
+    実績投入 ≤ 完全雇用投入 のため gap ≤ 0 が構造的に成立。"""
     n = len(real_gdp)
 
     def resize(seq):
@@ -188,15 +214,27 @@ def _estimate_maximum(real_gdp, quarters):
         return [seq[0]] * (n - len(seq)) + list(seq)
 
     labor = resize(MOCK_LABOR_FORCE)
+    lfpr = resize(MOCK_LFPR)
     hours = resize(MOCK_HOURS)
     unemp = [u / 100.0 for u in resize(MOCK_UNEMPLOYMENT)]
     capital = resize(MOCK_CAPITAL_STOCK)
+    utilization = resize(MOCK_UTILIZATION)
 
-    L_actual = [labor[i] * hours[i] * (1.0 - unemp[i]) for i in range(n)]
-    L_full = [labor[i] * hours[i] * (1.0 - _NAIRU) for i in range(n)]
+    # CBO 流: LFPR と HOURS は HP トレンドで構造化
+    lfpr_trend = hp_filter(lfpr, 1600.0)
+    hours_trend = hp_filter(hours, 1600.0)
+
+    L_actual = [labor[i] * lfpr[i] * hours[i] * (1.0 - unemp[i]) for i in range(n)]
+    L_full = [
+        labor[i] * lfpr_trend[i] * hours_trend[i] * (1.0 - _NAIRU)
+        for i in range(n)
+    ]
+
+    K_services_actual = [capital[i] * utilization[i] for i in range(n)]
+    K_services_full = [capital[i] * _UTILIZATION_FULL for i in range(n)]
 
     A_implied = [
-        real_gdp[i] / ((L_actual[i] ** (1.0 - _CD_ALPHA)) * (capital[i] ** _CD_ALPHA))
+        real_gdp[i] / ((L_actual[i] ** (1.0 - _CD_ALPHA)) * (K_services_actual[i] ** _CD_ALPHA))
         for i in range(n)
     ]
     A_smoothed = hp_filter(A_implied, 1600.0)
@@ -211,7 +249,7 @@ def _estimate_maximum(real_gdp, quarters):
 
     out = []
     for i, q in enumerate(quarters):
-        pot = A_max[i] * (L_full[i] ** (1.0 - _CD_ALPHA)) * (capital[i] ** _CD_ALPHA)
+        pot = A_max[i] * (L_full[i] ** (1.0 - _CD_ALPHA)) * (K_services_full[i] ** _CD_ALPHA)
         if pot <= 0:
             pot = real_gdp[i]
         gap_pct = round((real_gdp[i] - pot) / pot * 100, 2)
@@ -237,7 +275,10 @@ def generate_gdp_gap():
     }
     maximum_block = {
         "data": maximum_data,
-        "method": "Cobb-Douglas 生産関数 (TFPトレンド × 完全雇用労働投入 × 資本ストック, α=0.33, NAIRU=2.5%)",
+        "method": (
+            "Cobb-Douglas (CBO methodology: 完全雇用労働投入 × capital services × TFP_max, "
+            "α=0.33, NAIRU=2.5%)"
+        ),
         "last_updated": today,
     }
 

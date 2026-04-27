@@ -120,7 +120,7 @@ _estimate_gdp_gap = _estimate_gdp_gap_average
 
 
 # ---------------------------------------------------------------------------
-# 最大概念潜在GDP: Cobb-Douglas 生産関数アプローチ
+# 最大概念潜在GDP: Cobb-Douglas 生産関数アプローチ (CBO methodology 準拠)
 # ---------------------------------------------------------------------------
 #
 # 思想:
@@ -128,38 +128,79 @@ _estimate_gdp_gap = _estimate_gdp_gap_average
 #   （0% を上回るのは概念の混乱）。投資が進めば潜在GDPも増える、という
 #   ストック・労働投入の能力ベースで推計する。
 #
-# モデル:
-#   Y_potential_t = A_trend_t * (L_full_t)^(1-α) * (K_t)^α
-#   - α: 資本分配率（日本は 0.33 が定型値）
-#   - A_t: TFP（全要素生産性）。実績Yから A_t = Y_t / (L_t^(1-α) * K_t^α)
-#         で逆算し、HPフィルター（λ=1600）でトレンド抽出 → A_trend_t
-#   - L_full_t: 完全雇用労働投入
-#         = 労働力人口_t × 平均労働時間_t × (1 - NAIRU)
-#     NAIRU は日本基準で 2.5% 固定（構造的失業率）
-#   - K_t: 民間資本ストック（実績）。投資フローの累積で増えていく
+# CBO Potential GDP methodology (https://www.cbo.gov/topics/economy) を
+# 日本データに適用したもの。CBO の手順に従い、労働投入と資本投入を分解、
+# TFP を Solow 残差として抽出し HP トレンド + フロンティア max を用いる。
 #
-# 実データ差し替え点（TODO）:
-#   - 労働力人口・就業者数: 総務省統計局「労働力調査」
+# モデル:
+#   Y_potential_t = A_max_t * (L_full_t)^(1-α) * (K_services_t)^α
+#
+#   α=0.33 （資本分配率）
+#     日本の労働分配率 ≈ 2/3（SNA 雇用者報酬 / 国民所得ベース、近年67%前後）
+#     よって資本分配率 ≈ 1/3。CBO 米国推計と同じ慣行値。
+#     参考: 内閣府『国民経済計算年次推計』要素所得分配。
+#
+#   NAIRU=2.5% （構造的失業率, 非加速インフレ失業率）
+#     日本の労働市場における完全雇用に対応する失業率の合意値。
+#     2010年代後半に実績失業率が2.4%前後で賃金加速が見られなかったことが根拠。
+#     参考: 日銀ワーキングペーパー / 内閣府ESRI Discussion Paper。
+#
+#   UTILIZATION_FULL=0.95 （完全稼働時の資本稼働率）
+#     CBO は鉱工業稼働率の過去ピーク帯を使う。日本は経産省「鉱工業生産指数」
+#     の稼働率指数。バブル期ピーク〜コロナ前ピークの平均を 95% 水準で代理。
+#     ハードコード値。実データ取得時は ピーク値 = max(過去の稼働率_t) を採用。
+#
+# 労働投入の分解 (CBO 流):
+#   L_full_t = 労働力人口_t × LFPR_trend_t × HOURS_trend_t × (1 - NAIRU)
+#     - LFPR (Labor Force Participation Rate, 労働参加率) は HP フィルターで
+#       トレンド抽出。CBO は構造LFPRを別途デモグラ分解で推計するが、本実装は
+#       HP λ=1600 トレンドで近似。
+#     - 平均労働時間も同様に HP トレンドで構造的に均す。
+#   L_actual_t = 労働力人口_t × LFPR_t × HOURS_t × (1 - 実績失業率_t)
+#
+# 資本サービスの分解 (CBO 流):
+#   K_services_t = K_stock_t × UTILIZATION_FULL
+#     CBO の capital services は資本財別ウエイトで集計するが、本実装は
+#     稼働率調整のみ。実データ差し替え時は SNA の実質資本サービス指数を使う。
+#
+# TFP (Solow 残差):
+#   A_implied_t = Y_t / (L_actual_t^(1-α) × K_services_actual_t^α)
+#     ここで K_services_actual_t = K_stock_t × 実績稼働率_t
+#   A_trend_t  = HP_filter(A_implied_t, λ=1600)
+#   A_max_t    = 累積max( max(A_trend_t, A_implied_t) )
+#     「フロンティアTFP」を採用することで、過去ピーク水準の生産性が永続する
+#     最大概念に整合させる（hysteresis 上方シフト）。
+#
+# 実データ差し替え点 (TODO):
+#   - 労働力人口・就業者数・LFPR: 総務省統計局「労働力調査」
 #   - 平均労働時間: 厚労省「毎月勤労統計」
 #   - 失業率実績: 同 労働力調査
 #   - 民間資本ストック: 内閣府「民間企業資本ストック」(SNA系列)
-#   現状はモック定数。実データ取得時は _MOCK_LABOR_FORCE / _MOCK_HOURS /
-#   _MOCK_UNEMPLOYMENT / _MOCK_CAPITAL_STOCK を差し替え、_fetch_macro_inputs()
-#   フックで上書きすれば本実装はそのまま使える設計。
+#   - 稼働率: 経産省「鉱工業指数」稼働率指数
+#   現状はモック定数。実データ取得時は下記 _MOCK_* を差し替え、
+#   _fetch_macro_inputs() フックで上書きすれば本実装はそのまま使える設計。
 # ---------------------------------------------------------------------------
 
-# 構造パラメータ
-_CD_ALPHA = 0.33  # 資本分配率（日本標準）
+# 構造パラメータ (CBO methodology 投入定数)
+_CD_ALPHA = 0.33  # 資本分配率（日本標準: 労働分配率 2/3 → 1 - 2/3）
 _NAIRU = 0.025  # 構造的失業率 2.5%
+_UTILIZATION_FULL = 0.95  # 完全稼働率（鉱工業稼働率ピーク帯の代理値）
 
-# モック投入要素（_QUARTERS と同じ12四半期; 単位は名目スケール）
+# モック投入要素（_QUARTERS と同じ12四半期）
 # 労働力人口（百万人）— 緩やかな減少トレンド
 _MOCK_LABOR_FORCE: list[float] = [
     69.0, 69.0, 68.9, 68.8,
     68.8, 68.7, 68.6, 68.5,
     68.5, 68.4, 68.3, 68.2,
 ]
-# 平均労働時間（時間/月）
+# LFPR (Labor Force Participation Rate, 労働参加率, 比率)
+# 高齢化と女性就業拡大の合成で緩やかに上昇。日本実績は 62〜63% 帯。
+_MOCK_LFPR: list[float] = [
+    0.625, 0.626, 0.627, 0.628,
+    0.628, 0.629, 0.629, 0.630,
+    0.630, 0.631, 0.631, 0.632,
+]
+# 平均労働時間（時間/月）— 短縮トレンド + 季節揺らぎ
 _MOCK_HOURS: list[float] = [
     138.0, 138.5, 138.8, 139.0,
     139.2, 139.5, 139.8, 140.0,
@@ -177,22 +218,33 @@ _MOCK_CAPITAL_STOCK: list[float] = [
     1882.0, 1888.0, 1895.0, 1902.0,
     1908.0, 1914.0, 1920.0, 1926.0,
 ]
+# 実績資本稼働率（比率）— 鉱工業稼働率指数の代理値。完全=0.95 を上回らない。
+_MOCK_UTILIZATION: list[float] = [
+    0.91, 0.92, 0.92, 0.93,
+    0.93, 0.93, 0.92, 0.92,
+    0.91, 0.90, 0.90, 0.89,
+]
 
 
 def _estimate_gdp_gap_maximum(
     real_gdp: list[float], quarters: list[str]
 ) -> list[EstimatedGdpGapDataPoint]:
-    """最大概念のGDPギャップ（Cobb-Douglas 生産関数アプローチ）。
+    """最大概念のGDPギャップ (CBO methodology 準拠 Cobb-Douglas)。
 
-    Y_potential = A_trend * L_full^(1-α) * K^α
-    で完全雇用ベースの潜在GDPを推計する。実績Yから TFP を逆算 → HP平滑化で
-    トレンド抽出 → 完全雇用労働投入と実績資本ストックを掛け合わせる。
+    Y_potential = A_max * L_full^(1-α) * K_services_full^α
+      L_full          = 労働力人口 × LFPR_trend × HOURS_trend × (1 - NAIRU)
+      K_services_full = K_stock × UTILIZATION_FULL
+      A_max           = 累積max( max(HP_trend(A_implied), A_implied) )
 
-    実績失業率 ≥ NAIRU である限り L_full ≥ L_実績 となるため、構造上
-    Y_potential ≥ Y_実績、つまりギャップは ≤ 0 に収まりやすい設計。
+    実績側は LFPR・HOURS は実績値、稼働率も実績値、失業率も実績値で
+    A_implied (Solow 残差) を取り、HP トレンド + フロンティア max で
+    「持てる力の最大」を表す TFP に変換する。
 
-    NOTE: 現状はモックパラメータ（_MOCK_LABOR_FORCE 等）。
-          実データ差し替えは _fetch_macro_inputs() を実装する（上のドキュメント参照）。
+    実績側投入 (LFPR, HOURS, 稼働率, 失業率) ≤ 完全雇用側投入の関係を
+    保持するため、Y_potential ≥ Y_actual, gap ≤ 0 が構造的に成立する。
+
+    NOTE: 現状はモックパラメータ（_MOCK_* 群）。
+          実データ差し替えは _fetch_macro_inputs() を実装する。
     """
     n = len(real_gdp)
     y = np.array(real_gdp, dtype=float)
@@ -208,27 +260,41 @@ def _estimate_gdp_gap_maximum(
         return np.array(pad + seq, dtype=float)
 
     labor_force = _resize(_MOCK_LABOR_FORCE)
+    lfpr = _resize(_MOCK_LFPR)
     hours = _resize(_MOCK_HOURS)
     unemployment = _resize(_MOCK_UNEMPLOYMENT) / 100.0  # % → 比率
     capital = _resize(_MOCK_CAPITAL_STOCK)
+    utilization = _resize(_MOCK_UTILIZATION)
 
-    # 実績労働投入 L_t = 労働力人口 × 労働時間 × (1 - 実績失業率)
-    L_actual = labor_force * hours * (1.0 - unemployment)
-    # 完全雇用労働投入 L_full = 労働力人口 × 労働時間 × (1 - NAIRU)
-    L_full = labor_force * hours * (1.0 - _NAIRU)
+    # CBO 流: LFPR と HOURS は HP トレンドで構造化
+    lfpr_trend = _hp_filter(lfpr)
+    hours_trend = _hp_filter(hours)
 
-    # 実績Yから TFP 逆算（A_t = Y_t / (L_t^(1-α) * K_t^α)）
-    denom_actual = (L_actual ** (1.0 - _CD_ALPHA)) * (capital ** _CD_ALPHA)
+    # 実績労働投入 (Solow 残差用)
+    # L_actual = 労働力人口 × LFPR_実績 × HOURS_実績 × (1 - 失業率_実績)
+    L_actual = labor_force * lfpr * hours * (1.0 - unemployment)
+    # 完全雇用労働投入 (CBO methodology)
+    # L_full = 労働力人口 × LFPR_trend × HOURS_trend × (1 - NAIRU)
+    L_full = labor_force * lfpr_trend * hours_trend * (1.0 - _NAIRU)
+
+    # 資本サービス
+    # 実績側は実績稼働率、完全雇用側は完全稼働率を用いる
+    K_services_actual = capital * utilization
+    K_services_full = capital * _UTILIZATION_FULL
+
+    # Solow 残差 TFP: A_t = Y_t / (L_actual_t^(1-α) × K_services_actual_t^α)
+    denom_actual = (L_actual ** (1.0 - _CD_ALPHA)) * (K_services_actual ** _CD_ALPHA)
     A_implied = y / denom_actual
-    # TFPトレンド: HPフィルター後、これまで観測した最大値で「フロンティア」を取る。
-    # 「潜在 = 持てる力の最大値」の思想に合わせ、実績TFPがトレンドを上回った
-    # 期は当該水準を以後の潜在生産性として保持する（hysteresis 風の上方シフト）。
+
+    # フロンティア TFP: HPトレンドと実績の max → 累積max
+    # 「持てる力の最大」の思想 (CBO 自体は HP トレンド止まりだが、本実装は
+    # 最大概念寄りに踏み込む)。
     A_smoothed = _hp_filter(A_implied)
     A_frontier = np.maximum(A_smoothed, A_implied)
     A_max = np.maximum.accumulate(A_frontier)
 
     # 完全雇用ベースの潜在GDP
-    potential_max = A_max * (L_full ** (1.0 - _CD_ALPHA)) * (capital ** _CD_ALPHA)
+    potential_max = A_max * (L_full ** (1.0 - _CD_ALPHA)) * (K_services_full ** _CD_ALPHA)
 
     # 数値スケールが実績Yと整合するよう、必要に応じて単位整合をかけている
     # （A_implied 自体に Y のスケール情報が乗るので、追加スケールは不要）
@@ -384,7 +450,10 @@ async def get_gdp_gap() -> GdpGapResponse:
     )
     maximum = EstimatedGdpGap(
         data=maximum_data,
-        method="Cobb-Douglas 生産関数 (TFPトレンド × 完全雇用労働投入 × 資本ストック, α=0.33, NAIRU=2.5%)",
+        method=(
+            "Cobb-Douglas (CBO methodology: 完全雇用労働投入 × capital services × TFP_max, "
+            "α=0.33, NAIRU=2.5%)"
+        ),
         last_updated=today,
     )
 
