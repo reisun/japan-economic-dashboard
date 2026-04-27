@@ -1,0 +1,230 @@
+{
+  "interest_rates": {
+    "fred": [
+      {
+        "date": "2024-01-01",
+        "us_10y_yield": 4.2,
+        "fed_funds_rate": 5.25
+      },
+      {
+        "date": "2024-01-31",
+        "us_10y_yield": 4.25,
+        "fed_funds_rate": 5.21
+      },
+      {
+        "date": "2024-03-01",
+        "us_10y_yield": 4.3,
+        "fed_funds_rate": 5.17
+      },
+      {
+        "date": "2024-03-31",
+        "us_10y_yield": 4.35,
+        "fed_funds_rate": 5.13
+      },
+      {
+        "date": "2024-04-30",
+        "us_10y_yield": 4.4,
+        "fed_funds_rate": 5.09
+      },
+      {
+        "date": "2024-05-30",
+        "us_10y_yield": 4.45,
+        "fed_funds_rate": 5.05
+      },
+      {
+        "date": "2024-06-29",
+        "us_10y_yield": 4.5,
+        "fed_funds_rate": 5.01
+      },
+      {
+        "date": "2024-07-29",
+        "us_10y_yield": 4.55,
+        "fed_funds_rate": 4.97
+      },
+      {
+        "date": "2024-08-28",
+        "us_10y_yield": 4.6,
+        "fed_funds_rate": 4.93
+      },
+      {
+        "date": "2024-09-27",
+        "us_10y_yield": 4.65,
+        "fed_funds_rate": 4.89
+      },
+      {
+        "date": "2024-10-27",
+        "us_10y_yield": 4.7,
+        "fed_funds_rate": 4.85
+      },
+      {
+        "date": "2024-11-26",
+        "us_10y_yield": 4.75,
+        "fed_funds_rate": 4.81
+      }
+    ],
+    "boj": [
+      {
+        "date": "2024-01-01",
+        "policy_rate": -0.1,
+        "jgb_10y_yield": 0.6
+      },
+      {
+        "date": "2024-01-31",
+        "policy_rate": -0.08,
+        "jgb_10y_yield": 0.63
+      },
+      {
+        "date": "2024-03-01",
+        "policy_rate": -0.06,
+        "jgb_10y_yield": 0.66
+      },
+      {
+        "date": "2024-03-31",
+        "policy_rate": -0.04,
+        "jgb_10y_yield": 0.69
+      },
+      {
+        "date": "2024-04-30",
+        "policy_rate": -0.02,
+        "jgb_10y_yield": 0.72
+      },
+      {
+        "date": "2024-05-30",
+        "policy_rate": 0.0,
+        "jgb_10y_yield": 0.75
+      },
+      {
+        "date": "2024-06-29",
+        "policy_rate": 0.02,
+        "jgb_10y_yield": 0.78
+      },
+      {
+        "date": "2024-07-29",
+        "policy_rate": 0.04,
+        "jgb_10y_yield": 0.81
+      },
+      {
+        "date": "2024-08-28",
+        "policy_rate": 0.06,
+        "jgb_10y_yield": 0.84
+      },
+      {
+        "date": "2024-09-27",
+        "policy_rate": 0.08,
+        "jgb_10y_yield": 0.87
+      },
+      {
+        "date": "2024-10-27",
+        "policy_rate": 0.1,
+        "jgb_10y_yield": 0.9
+      },
+      {
+        "date": "2024-11-26",
+        "policy_rate": 0.12,
+        "jgb_10y_yield": 0.93
+      }
+    ]
+  },
+  "exchange_rates": {
+    "yahoo_finance": [
+      {
+        "date": "2024-01-01",
+        "usdjpy": 148.0
+      },
+      {
+        "date": "2024-01-31",
+        "usdjpy": 148.5
+      },
+      {
+        "date": "2024-03-01",
+        "usdjpy": 149.0
+      },
+      {
+        "date": "2024-03-31",
+        "usdjpy": 149.5
+      },
+      {
+        "date": "2024-04-30",
+        "usdjpy": 150.0
+      },
+      {
+        "date": "2024-05-30",
+        "usdjpy": 150.5
+      },
+      {
+        "date": "2024-06-29",
+        "usdjpy": 151.0
+      },
+      {
+        "date": "2024-07-29",
+        "usdjpy": 151.5
+      },
+      {
+        "date": "2024-08-28",
+        "usdjpy": 152.0
+      },
+      {
+        "date": "2024-09-27",
+        "usdjpy": 152.5
+      },
+      {
+        "date": "2024-10-27",
+        "usdjpy": 153.0
+      },
+      {
+        "date": "2024-11-26",
+        "usdjpy": 153.5
+      }
+    ],
+    "fred": [
+      {
+        "date": "2024-01-01",
+        "usdjpy": 148.0
+      },
+      {
+        "date": "2024-01-31",
+        "usdjpy": 148.5
+      },
+      {
+        "date": "2024-03-01",
+        "usdjpy": 149.0
+      },
+      {
+        "date": "2024-03-31",
+        "usdjpy": 149.5
+      },
+      {
+        "date": "2024-04-30",
+        "usdjpy": 150.0
+      },
+      {
+        "date": "2024-05-30",
+        "usdjpy": 150.5
+      },
+      {
+        "date": "2024-06-29",
+        "usdjpy": 151.0
+      },
+      {
+        "date": "2024-07-29",
+        "usdjpy": 151.5
+      },
+      {
+        "date": "2024-08-28",
+        "usdjpy": 152.0
+      },
+      {
+        "date": "2024-09-27",
+        "usdjpy": 152.5
+      },
+      {
+        "date": "2024-10-27",
+        "usdjpy": 153.0
+      },
+      {
+        "date": "2024-11-26",
+        "usdjpy": 153.5
+      }
+    ]
+  }
+}
