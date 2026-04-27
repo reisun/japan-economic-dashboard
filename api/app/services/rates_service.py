@@ -198,27 +198,38 @@ def _fetch_boj_rates() -> list[BojRateDataPoint] | None:
 
 
 async def get_rates() -> RatesResponse:
-    """Return rates data with fallback to mock for each source."""
+    """Return rates data with fallback to mock for each source.
+
+    各系列の取得成否（real / mock）はログに記録する。
+    """
+
+    status: dict[str, str] = {}
 
     # FRED interest rates
     fred_rates = _fetch_fred_rates()
+    status["fred_rates"] = "real" if fred_rates else "mock"
     if fred_rates is None:
         fred_rates = [FredRateDataPoint(**d) for d in _MOCK_FRED_RATES]
 
     # BOJ rates (via FRED)
     boj_rates = _fetch_boj_rates()
+    status["boj_rates"] = "real" if boj_rates else "mock"
     if boj_rates is None:
         boj_rates = [BojRateDataPoint(**d) for d in _MOCK_BOJ_RATES]
 
     # Yahoo Finance FX
     yahoo_fx = _fetch_yahoo_fx()
+    status["yahoo_fx"] = "real" if yahoo_fx else "mock"
     if yahoo_fx is None:
         yahoo_fx = [ExchangeRateDataPoint(**d) for d in _MOCK_YAHOO_FX]
 
     # FRED FX
     fred_fx = _fetch_fred_fx()
+    status["fred_fx"] = "real" if fred_fx else "mock"
     if fred_fx is None:
         fred_fx = [ExchangeRateDataPoint(**d) for d in _MOCK_FRED_FX]
+
+    logger.info("rates data sources: %s", status)
 
     # 共通レンジ（GDPギャップ実績期間）に揃える
     fred_rates = filter_to_actual_range(fred_rates, label="fred_rates")
