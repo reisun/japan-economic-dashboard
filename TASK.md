@@ -23,6 +23,6 @@
 - [x] FRED API key 設定による実データ取得（README に Setup 手順を記載、`.env.example` に `FRED_API_KEY=` 確認、未設定時は起動時に 1 回だけ警告ログを出してモックフォールバック、`/api/v1/health/data-sources` で各シリーズの取得成否を確認可能）
 - [x] VARなど統計的回帰モデルへの拡張（OLS-VAR と AR(1) ベンチマークを追加; `/api/v1/prediction?engine=is_lm|var|ar1` で切替、+1兆円財政ショックの IRF 返却、フロントに予測モデル切替セレクタ、静的JSON `prediction-<method>-<engine>.json` 対応）
 - [x] Recharts chunk分割（vite `manualChunks` で recharts を独立 chunk 化、initial JS を 567kB→30kB に削減、ビルドサイズ警告解消; `chunkSizeWarningLimit: 700` で recharts 自体の警告を抑制）
+- [x] reverse-proxy への統合（reverse-proxy 統合は完了済（`~/workspace/reverse-proxy/nginx/nginx.conf` に `/japan-economic-dashboard/api/` ルーティング、`japan-economic-dashboard-net` 経由で upstream `japan-economic-dashboard-api:8000` に到達）。外部 URL `https://reisun.asuscomm.com/japan-economic-dashboard/api/v1/*` で health / gdp-gap / inflation / prediction が HTTP 200 応答を実機確認。CORS は FastAPI 側で `https://reisun.github.io` を許可済。本番デプロイ構成と nginx 抜粋を README.md に追記。）
 
 ## Backlog
-- [ ] reverse-proxy への統合

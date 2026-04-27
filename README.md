@@ -107,3 +107,85 @@ curl http://localhost:8001/api/v1/health/data-sources
 - `.env` および API key は **絶対にコミットしない**。
 - モックフォールバックが効くため、キー未設定でも 500 にはならないが、
   本番環境では `health/data-sources` で `ok: true` になっていることを確認すること。
+
+## 本番デプロイ構成
+
+本番は次の三層構成で公開している。
+
+```
+[ブラウザ]
+   │  https://reisun.github.io/japan-economic-dashboard/   (静的フロント)
+   ▼
+[GitHub Pages]  ── 静的アセット（Vite ビルド成果物）
+   │  fetch: https://reisun.asuscomm.com/japan-economic-dashboard/api/v1/...
+   ▼
+[reverse-proxy (~/workspace/reverse-proxy)]  ── nginx（HTTPS 終端）
+   │  proxy_pass: http://japan-economic-dashboard-api:8000/api/...
+   ▼  (docker network: japan-economic-dashboard-net)
+[このリポジトリの docker compose]  ── FastAPI (uvicorn :8000)
+```
+
+- フロントは GitHub Pages から配信され、ビルド時に
+  `VITE_API_BASE_URL=https://reisun.asuscomm.com/japan-economic-dashboard/api/v1`
+  を埋め込んで API を叩く。
+- API 公開は `~/workspace/reverse-proxy/` の nginx が担当。
+  外部 `/japan-economic-dashboard/api/` を内部 `/api/` にマップする。
+- API 実体はこのリポジトリの `docker compose up -d` で起動するコンテナ
+  （`japan-economic-dashboard-api` という network alias を持つ）。
+- reverse-proxy 側の docker network `japan-economic-dashboard-net` を
+  external として共有することで、reverse-proxy → API への
+  HTTP 通信がホスト経由なしで成立する。
+
+### reverse-proxy 側 nginx 設定の関連抜粋
+
+`~/workspace/reverse-proxy/nginx/nginx.conf`:
+
+```nginx
+upstream japan_economic_dashboard_api {
+    server japan-economic-dashboard-api:8000;
+}
+
+# japan-economic-dashboard: /japan-economic-dashboard/api/ を upstream にマップ
+location /japan-economic-dashboard/api/ {
+    proxy_pass http://japan_economic_dashboard_api/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+`~/workspace/reverse-proxy/docker-compose.yml`:
+
+```yaml
+networks:
+  japan-economic-dashboard-net:
+    external: true
+    name: japan-economic-dashboard-net
+```
+
+CORS は FastAPI 側の `CORSMiddleware` が `https://reisun.github.io` を
+許可しており、nginx 側で追加ヘッダを付ける必要はない
+（ヘルスエンドポイント `/api/v1/health/data-sources` を含む全
+`/api/v1/*` がそのまま透過される）。
+
+### 動作確認コマンド
+
+```bash
+# health（reverse-proxy 経由）
+curl -k https://reisun.asuscomm.com/japan-economic-dashboard/api/v1/health/data-sources
+
+# 各エンドポイント
+curl -k https://reisun.asuscomm.com/japan-economic-dashboard/api/v1/gdp-gap
+curl -k https://reisun.asuscomm.com/japan-economic-dashboard/api/v1/inflation
+curl -k https://reisun.asuscomm.com/japan-economic-dashboard/api/v1/prediction
+```
+
+### 運用メモ
+
+- API コンテナを再起動・再ビルドしても、`japan-economic-dashboard-net`
+  自体は維持されるので reverse-proxy の再起動は不要。
+- ただし network を作り直した場合（例: `docker compose down` 後）、
+  reverse-proxy 側で `docker compose restart nginx` または
+  `docker compose exec nginx nginx -s reload` が必要になることがある。
