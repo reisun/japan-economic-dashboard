@@ -27,7 +27,7 @@ const METHOD_LABEL: Record<GdpGapMethod, string> = {
 const METHOD_DESC: Record<GdpGapMethod, string> = {
   cabinet_office: "内閣府公表のGDPギャップ%",
   average: "HPフィルターによる平均概念（旧 estimated）",
-  maximum: "Cobb-Douglas 生産関数（TFPトレンド × 完全雇用労働投入 × 資本ストック, α=0.33, NAIRU=2.5%）",
+  maximum: "Cobb-Douglas（CBO methodology: 完全雇用労働投入 × capital services × TFP_max, α=0.33, NAIRU=2.5%）",
 };
 
 function buildSeries(
