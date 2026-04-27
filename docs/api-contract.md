@@ -81,6 +81,10 @@ Response:
 ### 4. Prediction (IS-LM Model)
 `GET /prediction`
 
+Query parameters:
+- `method` (optional): `cabinet_office | average | maximum | civilian` — どの GDP ギャップ推計を起点にするか（既定: `maximum`）
+- `fiscal_spending_trillion` (optional, float): 任意の財政支出額（兆円, 符号付き）。指定時はこの値で IS-LM インパクトを計算する。範囲 `-200`〜`200`、範囲外は HTTP 400。未指定時は GDP ギャップから自動算出。
+
 Response:
 ```json
 {
@@ -91,7 +95,9 @@ Response:
   "required_fiscal_spending": {
     "amount_trillion_yen": 14.0,
     "multiplier": 1.0,
-    "note": "デフレギャップ解消に必要な財政支出"
+    "note": "デフレギャップ解消に必要な財政支出",
+    "scenario_mode": "auto",
+    "auto_amount_trillion_yen": 14.0
   },
   "impact_prediction": {
     "interest_rate": [

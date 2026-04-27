@@ -119,6 +119,10 @@ class RequiredFiscalSpending(BaseModel):
     amount_trillion_yen: float
     multiplier: float
     note: str = "デフレギャップ解消に必要な財政支出"
+    # シナリオモード: "auto" (GDPギャップから自動算出) | "user" (ユーザー指定)
+    scenario_mode: str = "auto"
+    # auto モードでの自動算出値（user モード時の併記用）
+    auto_amount_trillion_yen: float | None = None
 
 
 class InterestRatePrediction(BaseModel):

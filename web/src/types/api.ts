@@ -110,6 +110,10 @@ export interface PredictionResponse {
     amount_trillion_yen: number;
     multiplier: number;
     note: string;
+    /** "auto" (GDPギャップから自動算出) | "user" (ユーザー指定シナリオ) */
+    scenario_mode?: "auto" | "user";
+    /** auto モード時の自動算出値（user モード時の比較表示用） */
+    auto_amount_trillion_yen?: number | null;
   };
   impact_prediction: {
     interest_rate: PredictionRatePoint[];
