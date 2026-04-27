@@ -398,6 +398,70 @@ def generate_gdp_gap():
 # Fund Demand data
 # ---------------------------------------------------------------------------
 
+def _fetch_boj_flow_of_funds_static():
+    """BOJ 時系列データ検索サイトの ZIP を取得し、部門別純貸出を返す。
+
+    失敗時 None。pure-Python (urllib + zipfile + csv) のみ使用。
+    """
+    try:
+        import csv as _csv
+        import io as _io
+        import urllib.request
+        import zipfile as _zip
+
+        url = "https://www.stat-search.boj.or.jp/info/fof2_en.zip"
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "Mozilla/5.0 (japan-economic-dashboard static)"}
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            buf = resp.read()
+        sectors = {
+            "households":   "FOF_FFAF430L700",
+            "corporations": "FOF_FFAF410L700",
+            "government":   "FOF_FFAF420L700",
+        }
+        target = set(sectors.values())
+        with _zip.ZipFile(_io.BytesIO(buf)) as zf:
+            csv_bytes = zf.read("ff_dl_fof_quarterly_en.csv")
+        text = csv_bytes.decode("utf-8-sig", errors="replace")
+        rows = list(_csv.reader(_io.StringIO(text)))
+        if not rows:
+            return None
+        header = rows[0]
+        period_cols = []
+        for i in range(3, len(header)):
+            s = header[i].strip()
+            if len(s) == 6 and s.isdigit():
+                period_cols.append((i, int(s[:4]), int(s[4:])))
+        sid_row = {r[0].strip(): r for r in rows[1:] if r and r[0].strip() in target}
+        out = []
+        order = {"households": 0, "corporations": 1, "government": 2}
+        for sector, sid in sectors.items():
+            row = sid_row.get(sid)
+            if not row:
+                return None
+            for col, year, q in period_cols:
+                if col >= len(row):
+                    continue
+                cell = row[col].strip()
+                if not cell:
+                    continue
+                try:
+                    v = float(cell)
+                except ValueError:
+                    continue
+                out.append({
+                    "date": f"{year}-Q{q}",
+                    "sector": sector,
+                    "net_lending": round(v / 10000.0, 1),
+                })
+        out.sort(key=lambda p: (p["date"], order.get(p["sector"], 99)))
+        return out or None
+    except Exception as e:
+        print(f"[generate_static_data] BOJ FOF fetch failed: {e}")
+        return None
+
+
 def generate_fund_demand():
     quarters = [
         "2022-Q1", "2022-Q2", "2022-Q3", "2022-Q4",
@@ -405,13 +469,19 @@ def generate_fund_demand():
         "2024-Q1", "2024-Q2", "2024-Q3", "2024-Q4",
     ]
 
-    flow_data = []
-    for q in quarters:
-        flow_data.extend([
-            {"date": q, "sector": "households",   "net_lending": round(12.0 + (hash(q) % 10) * 0.5, 1)},
-            {"date": q, "sector": "corporations", "net_lending": round(-4.0 + (hash(q) % 6) * 0.3, 1)},
-            {"date": q, "sector": "government",   "net_lending": round(-18.0 - (hash(q) % 8) * 0.4, 1)},
-        ])
+    real_flow = _fetch_boj_flow_of_funds_static()
+    if real_flow:
+        print(f"[generate_static_data] flow_of_funds: real ({len(real_flow)} points from BOJ stat-search)")
+        flow_data = real_flow
+    else:
+        print("[generate_static_data] flow_of_funds: mock (BOJ fetch failed)")
+        flow_data = []
+        for q in quarters:
+            flow_data.extend([
+                {"date": q, "sector": "households",   "net_lending": round(12.0 + (hash(q) % 10) * 0.5, 1)},
+                {"date": q, "sector": "corporations", "net_lending": round(-4.0 + (hash(q) % 6) * 0.3, 1)},
+                {"date": q, "sector": "government",   "net_lending": round(-18.0 - (hash(q) % 8) * 0.4, 1)},
+            ])
 
     bank_lending = [
         {"date": "2022-01", "total_lending": 510.2, "yoy_change_percent": 1.5},
