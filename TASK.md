@@ -17,10 +17,11 @@
 - [x] PolicyMatrix の判定閾値を系統別に切替（最大概念は完全雇用基準ギャップ）
 - [x] 全パネルの表示期間を GDPギャップ実績期間に統一
 - [x] 実データ取得（内閣府GDP、日銀統計）のモックからの切り替え（GDPデフレータ・賃金・実質GDPを FRED 経由で実データ化、CPIコアコアは e-Stat 連携が TODO）
+- [x] CPIコアコアの実データ取得（e-Stat API → 総務省統計局CSV → モック の三段フォールバック; ESTAT_APP_ID 設定で実データ反映）
 
 ## Backlog
 
-- [ ] CPIコアコアの実データ取得（e-Stat API or 総務省統計局CSV直接パース）
+
 - [ ] BOJ 資金循環統計（flow of funds）の実データ取得（CSV 形式が複雑、URL検証要）
 - [ ] FRED API key 設定による実データ取得
 - [ ] VARなど統計的回帰モデルへの拡張
