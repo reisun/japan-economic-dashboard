@@ -12,7 +12,7 @@ router = APIRouter()
 async def prediction(
     method: str = Query(
         "maximum",
-        description="GDPギャップ推計手法: cabinet_office | average | maximum",
+        description="GDPギャップ推計手法: cabinet_office | average | maximum | civilian",
     ),
 ):
     if method not in VALID_METHODS:

@@ -121,7 +121,7 @@ def _compute_is_lm_impact(
 # ---------------------------------------------------------------------------
 
 
-VALID_METHODS = ("cabinet_office", "average", "maximum")
+VALID_METHODS = ("cabinet_office", "average", "maximum", "civilian")
 
 
 async def get_prediction(method: str = "maximum") -> PredictionResponse:
@@ -129,8 +129,9 @@ async def get_prediction(method: str = "maximum") -> PredictionResponse:
 
     Parameters
     ----------
-    method : "cabinet_office" | "average" | "maximum"
+    method : "cabinet_office" | "average" | "maximum" | "civilian"
         どの GDP ギャップ推計を起点にするか。デフォルトは最大概念。
+        civilian = 在野試算 (高橋洋一・三橋貴明・藤井聡らの代表的試算レンジ)
     """
 
     if method not in VALID_METHODS:
@@ -144,6 +145,8 @@ async def get_prediction(method: str = "maximum") -> PredictionResponse:
             gap_pct = latest_co.gdp_gap_percent
         elif method == "average":
             gap_pct = gdp_gap_data.estimated_average.data[-1].gdp_gap_percent
+        elif method == "civilian":
+            gap_pct = gdp_gap_data.estimated_civilian.data[-1].gdp_gap_percent
         else:  # maximum
             gap_pct = gdp_gap_data.estimated_maximum.data[-1].gdp_gap_percent
         gap_trillion = round(gap_pct / 100.0 * NOMINAL_GDP, 1)

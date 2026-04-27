@@ -37,6 +37,8 @@ class GdpGapResponse(BaseModel):
     estimated_average: EstimatedGdpGap
     # 最大概念（直接推計; MVP=正残差75%タイル）
     estimated_maximum: EstimatedGdpGap
+    # 在野試算 (高橋洋一・三橋貴明系の代表的レンジに基づく合成系列)
+    estimated_civilian: EstimatedGdpGap
     # 後方互換エイリアス: estimated_average と同じ
     estimated: EstimatedGdpGap
 

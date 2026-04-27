@@ -28,6 +28,7 @@ const METHOD_LABEL: Record<GdpGapMethod, string> = {
   cabinet_office: "内閣府公表",
   average: "平均概念",
   maximum: "最大概念",
+  civilian: "在野試算",
 };
 
 function buildPredictionPath(method: GdpGapMethod): string {
@@ -58,10 +59,12 @@ export function PredictionChart() {
   const path = buildPredictionPath(method);
   const { data, loading, error } = useApi<PredictionResponse>(path);
 
+  // タブ表示順: 内閣府公表 / 平均概念 / 最大概念 / 在野試算
   const tabs: { key: GdpGapMethod; label: string }[] = [
     { key: "cabinet_office", label: METHOD_LABEL.cabinet_office },
     { key: "average", label: METHOD_LABEL.average },
     { key: "maximum", label: METHOD_LABEL.maximum },
+    { key: "civilian", label: METHOD_LABEL.civilian },
   ];
 
   const renderTabs = () => (
