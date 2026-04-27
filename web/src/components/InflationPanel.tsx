@@ -13,9 +13,12 @@ import { useApi } from "../hooks/useApi";
 import type { InflationResponse } from "../types/api";
 
 /**
- * インフレ率パネル: CPIコア / GDPデフレータ / 賃金上昇率（前年同期比%）。
+ * インフレ率パネル: CPIコアコア / GDPデフレータ / 賃金上昇率（前年同期比%）。
  * 「ギャップは目的関数、インフレ率は制約条件」の運用思想を可視化する。
  * 日銀インフレ目標 2% を破線で表示。
+ *
+ * CPI は世界標準 core CPI に対応する「コアコア（生鮮食品及びエネルギー除く総合）」を採用。
+ * エネルギー価格急変動の影響を除いた基調インフレ指標として、日銀も近年重視している。
  */
 export function InflationPanel() {
   const { data, loading, error } =
@@ -25,7 +28,8 @@ export function InflationPanel() {
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-lg font-semibold mb-1">インフレ率</h2>
       <p className="text-xs text-gray-500 mb-3">
-        CPIコア / GDPデフレータ / 名目賃金（前年同期比%）。日銀目標 2% を破線で表示。
+        CPIコアコア（生鮮食品・エネルギー除く） / GDPデフレータ / 名目賃金（前年同期比%）。
+        日銀目標 2% を破線で表示。
       </p>
       {children}
     </div>
@@ -66,7 +70,7 @@ export function InflationPanel() {
     <>
       <p className="text-xs text-gray-500 mb-2">出典: {data.source}</p>
       <div className="flex flex-wrap gap-2 mb-3">
-        {card("CPIコア", latest.cpi_core, "#dc2626")}
+        {card("CPIコアコア（生鮮食品・エネルギー除く）", latest.cpi_core_core, "#dc2626")}
         {card("GDPデフレータ", latest.gdp_deflator, "#2563eb")}
         {card("賃金上昇率", latest.wage_growth, "#059669")}
       </div>
@@ -95,8 +99,8 @@ export function InflationPanel() {
           />
           <Line
             type="monotone"
-            dataKey="cpi_core"
-            name="CPIコア"
+            dataKey="cpi_core_core"
+            name="CPIコアコア（生鮮食品・エネルギー除く）"
             stroke="#dc2626"
             strokeWidth={2}
             dot={false}

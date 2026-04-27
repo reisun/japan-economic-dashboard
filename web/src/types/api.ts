@@ -122,9 +122,10 @@ export interface PredictionResponse {
 }
 
 // Inflation types
+// CPI は世界標準 core CPI に対応する「コアコア（生鮮食品及びエネルギー除く総合）」
 export interface InflationDataPoint {
   date: string;
-  cpi_core: number | null;
+  cpi_core_core: number | null;
   gdp_deflator: number | null;
   wage_growth: number | null;
 }

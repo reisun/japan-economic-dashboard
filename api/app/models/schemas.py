@@ -153,16 +153,21 @@ class PredictionResponse(BaseModel):
 # ---------- Inflation ----------
 
 class InflationDataPoint(BaseModel):
-    """前年同期比 % で揃えた3系列のインフレ指標。"""
+    """前年同期比 % で揃えた3系列のインフレ指標。
+
+    CPI は世界標準の core CPI（食料・エネルギー除く基調指標）に対応する
+    日本の「コアコア（生鮮食品及びエネルギー除く総合）」を採用。
+    """
     date: str
-    cpi_core: float | None = None        # CPIコア（生鮮食品除く総合, 前年同月比%）
+    # CPIコアコア（生鮮食品及びエネルギー除く総合, 前年同月比%）= 世界標準 core CPI
+    cpi_core_core: float | None = None
     gdp_deflator: float | None = None    # GDPデフレータ（前年同期比%）
     wage_growth: float | None = None     # 名目賃金（毎月勤労統計, 前年同月比%）
 
 
 class InflationResponse(BaseModel):
     data: list[InflationDataPoint]
-    source: str = "総務省CPI / 内閣府GDPデフレータ / 厚労省毎月勤労統計（モック）"
+    source: str = "総務省CPI（コアコア） / 内閣府GDPデフレータ / 厚労省毎月勤労統計（モック）"
     boj_target: float = 2.0              # 日銀インフレ目標 2%
     last_updated: str
 

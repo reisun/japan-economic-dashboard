@@ -4,167 +4,167 @@
       {
         "date": "2022-Q1",
         "sector": "households",
-        "net_lending": 12.0
-      },
-      {
-        "date": "2022-Q1",
-        "sector": "corporations",
-        "net_lending": -4.0
-      },
-      {
-        "date": "2022-Q1",
-        "sector": "government",
-        "net_lending": -20.4
-      },
-      {
-        "date": "2022-Q2",
-        "sector": "households",
-        "net_lending": 16.5
-      },
-      {
-        "date": "2022-Q2",
-        "sector": "corporations",
-        "net_lending": -2.5
-      },
-      {
-        "date": "2022-Q2",
-        "sector": "government",
-        "net_lending": -20.0
-      },
-      {
-        "date": "2022-Q3",
-        "sector": "households",
-        "net_lending": 13.0
-      },
-      {
-        "date": "2022-Q3",
-        "sector": "corporations",
-        "net_lending": -2.8
-      },
-      {
-        "date": "2022-Q3",
-        "sector": "government",
-        "net_lending": -18.8
-      },
-      {
-        "date": "2022-Q4",
-        "sector": "households",
-        "net_lending": 14.5
-      },
-      {
-        "date": "2022-Q4",
-        "sector": "corporations",
-        "net_lending": -3.1
-      },
-      {
-        "date": "2022-Q4",
-        "sector": "government",
-        "net_lending": -20.8
-      },
-      {
-        "date": "2023-Q1",
-        "sector": "households",
-        "net_lending": 15.0
-      },
-      {
-        "date": "2023-Q1",
-        "sector": "corporations",
-        "net_lending": -3.4
-      },
-      {
-        "date": "2023-Q1",
-        "sector": "government",
-        "net_lending": -18.0
-      },
-      {
-        "date": "2023-Q2",
-        "sector": "households",
-        "net_lending": 14.0
-      },
-      {
-        "date": "2023-Q2",
-        "sector": "corporations",
-        "net_lending": -3.4
-      },
-      {
-        "date": "2023-Q2",
-        "sector": "government",
-        "net_lending": -19.6
-      },
-      {
-        "date": "2023-Q3",
-        "sector": "households",
-        "net_lending": 16.5
-      },
-      {
-        "date": "2023-Q3",
-        "sector": "corporations",
-        "net_lending": -3.1
-      },
-      {
-        "date": "2023-Q3",
-        "sector": "government",
-        "net_lending": -19.2
-      },
-      {
-        "date": "2023-Q4",
-        "sector": "households",
-        "net_lending": 14.0
-      },
-      {
-        "date": "2023-Q4",
-        "sector": "corporations",
-        "net_lending": -4.0
-      },
-      {
-        "date": "2023-Q4",
-        "sector": "government",
-        "net_lending": -18.0
-      },
-      {
-        "date": "2024-Q1",
-        "sector": "households",
-        "net_lending": 13.0
-      },
-      {
-        "date": "2024-Q1",
-        "sector": "corporations",
-        "net_lending": -4.0
-      },
-      {
-        "date": "2024-Q1",
-        "sector": "government",
-        "net_lending": -18.8
-      },
-      {
-        "date": "2024-Q2",
-        "sector": "households",
-        "net_lending": 14.0
-      },
-      {
-        "date": "2024-Q2",
-        "sector": "corporations",
-        "net_lending": -3.4
-      },
-      {
-        "date": "2024-Q2",
-        "sector": "government",
-        "net_lending": -19.6
-      },
-      {
-        "date": "2024-Q3",
-        "sector": "households",
         "net_lending": 12.5
       },
       {
-        "date": "2024-Q3",
+        "date": "2022-Q1",
         "sector": "corporations",
         "net_lending": -3.7
       },
       {
-        "date": "2024-Q3",
+        "date": "2022-Q1",
+        "sector": "government",
+        "net_lending": -18.4
+      },
+      {
+        "date": "2022-Q2",
+        "sector": "households",
+        "net_lending": 16.0
+      },
+      {
+        "date": "2022-Q2",
+        "sector": "corporations",
+        "net_lending": -4.0
+      },
+      {
+        "date": "2022-Q2",
+        "sector": "government",
+        "net_lending": -18.0
+      },
+      {
+        "date": "2022-Q3",
+        "sector": "households",
+        "net_lending": 16.5
+      },
+      {
+        "date": "2022-Q3",
+        "sector": "corporations",
+        "net_lending": -2.5
+      },
+      {
+        "date": "2022-Q3",
+        "sector": "government",
+        "net_lending": -18.4
+      },
+      {
+        "date": "2022-Q4",
+        "sector": "households",
+        "net_lending": 14.0
+      },
+      {
+        "date": "2022-Q4",
+        "sector": "corporations",
+        "net_lending": -4.0
+      },
+      {
+        "date": "2022-Q4",
+        "sector": "government",
+        "net_lending": -20.4
+      },
+      {
+        "date": "2023-Q1",
+        "sector": "households",
+        "net_lending": 12.0
+      },
+      {
+        "date": "2023-Q1",
+        "sector": "corporations",
+        "net_lending": -2.8
+      },
+      {
+        "date": "2023-Q1",
+        "sector": "government",
+        "net_lending": -18.8
+      },
+      {
+        "date": "2023-Q2",
+        "sector": "households",
+        "net_lending": 15.0
+      },
+      {
+        "date": "2023-Q2",
+        "sector": "corporations",
+        "net_lending": -4.0
+      },
+      {
+        "date": "2023-Q2",
+        "sector": "government",
+        "net_lending": -18.8
+      },
+      {
+        "date": "2023-Q3",
+        "sector": "households",
+        "net_lending": 15.5
+      },
+      {
+        "date": "2023-Q3",
+        "sector": "corporations",
+        "net_lending": -2.5
+      },
+      {
+        "date": "2023-Q3",
         "sector": "government",
         "net_lending": -20.0
+      },
+      {
+        "date": "2023-Q4",
+        "sector": "households",
+        "net_lending": 14.0
+      },
+      {
+        "date": "2023-Q4",
+        "sector": "corporations",
+        "net_lending": -2.8
+      },
+      {
+        "date": "2023-Q4",
+        "sector": "government",
+        "net_lending": -18.0
+      },
+      {
+        "date": "2024-Q1",
+        "sector": "households",
+        "net_lending": 12.5
+      },
+      {
+        "date": "2024-Q1",
+        "sector": "corporations",
+        "net_lending": -3.7
+      },
+      {
+        "date": "2024-Q1",
+        "sector": "government",
+        "net_lending": -19.2
+      },
+      {
+        "date": "2024-Q2",
+        "sector": "households",
+        "net_lending": 13.5
+      },
+      {
+        "date": "2024-Q2",
+        "sector": "corporations",
+        "net_lending": -3.1
+      },
+      {
+        "date": "2024-Q2",
+        "sector": "government",
+        "net_lending": -19.2
+      },
+      {
+        "date": "2024-Q3",
+        "sector": "households",
+        "net_lending": 14.0
+      },
+      {
+        "date": "2024-Q3",
+        "sector": "corporations",
+        "net_lending": -3.4
+      },
+      {
+        "date": "2024-Q3",
+        "sector": "government",
+        "net_lending": -20.4
       },
       {
         "date": "2024-Q4",
@@ -174,12 +174,12 @@
       {
         "date": "2024-Q4",
         "sector": "corporations",
-        "net_lending": -3.4
+        "net_lending": -2.8
       },
       {
         "date": "2024-Q4",
         "sector": "government",
-        "net_lending": -19.6
+        "net_lending": -18.8
       }
     ],
     "source": "日銀資金循環統計",
