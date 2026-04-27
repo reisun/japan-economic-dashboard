@@ -121,14 +121,31 @@ def _compute_is_lm_impact(
 # ---------------------------------------------------------------------------
 
 
-async def get_prediction() -> PredictionResponse:
-    """Run IS-LM prediction based on current GDP gap."""
+VALID_METHODS = ("cabinet_office", "average", "maximum")
+
+
+async def get_prediction(method: str = "maximum") -> PredictionResponse:
+    """Run IS-LM prediction based on current GDP gap.
+
+    Parameters
+    ----------
+    method : "cabinet_office" | "average" | "maximum"
+        どの GDP ギャップ推計を起点にするか。デフォルトは最大概念。
+    """
+
+    if method not in VALID_METHODS:
+        method = "maximum"
 
     # Get latest GDP gap estimate
     try:
         gdp_gap_data = await get_gdp_gap()
-        latest = gdp_gap_data.estimated.data[-1]
-        gap_pct = latest.gdp_gap_percent
+        if method == "cabinet_office":
+            latest_co = gdp_gap_data.cabinet_office.data[-1]
+            gap_pct = latest_co.gdp_gap_percent
+        elif method == "average":
+            gap_pct = gdp_gap_data.estimated_average.data[-1].gdp_gap_percent
+        else:  # maximum
+            gap_pct = gdp_gap_data.estimated_maximum.data[-1].gdp_gap_percent
         gap_trillion = round(gap_pct / 100.0 * NOMINAL_GDP, 1)
     except Exception:
         logger.exception("Failed to get GDP gap for prediction, using defaults")

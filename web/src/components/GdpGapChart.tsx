@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   LineChart,
   Line,
@@ -10,50 +11,74 @@ import {
   ReferenceLine,
 } from "recharts";
 import { useApi } from "../hooks/useApi";
-import type { GdpGapResponse } from "../types/api";
+import type { GdpGapMethod, GdpGapResponse } from "../types/api";
 
-interface MergedDataPoint {
+interface ChartPoint {
   date: string;
-  cabinet_office: number | null;
-  estimated: number | null;
+  value: number | null;
 }
 
-function mergeData(data: GdpGapResponse): MergedDataPoint[] {
-  const map = new Map<string, MergedDataPoint>();
+const METHOD_LABEL: Record<GdpGapMethod, string> = {
+  cabinet_office: "内閣府公表",
+  average: "平均概念",
+  maximum: "最大概念",
+};
 
-  for (const point of data.cabinet_office.data) {
-    map.set(point.date, {
-      date: point.date,
-      cabinet_office: point.gdp_gap_percent,
-      estimated: null,
-    });
+const METHOD_DESC: Record<GdpGapMethod, string> = {
+  cabinet_office: "内閣府公表のGDPギャップ%",
+  average: "HPフィルターによる平均概念（旧 estimated）",
+  maximum: "HPトレンド + 正残差75%タイル（最大概念MVP）",
+};
+
+function buildSeries(
+  data: GdpGapResponse,
+  method: GdpGapMethod,
+): ChartPoint[] {
+  if (method === "cabinet_office") {
+    return data.cabinet_office.data.map((p) => ({
+      date: p.date,
+      value: p.gdp_gap_percent,
+    }));
   }
-
-  for (const point of data.estimated.data) {
-    const existing = map.get(point.date);
-    if (existing) {
-      existing.estimated = point.gdp_gap_percent;
-    } else {
-      map.set(point.date, {
-        date: point.date,
-        cabinet_office: null,
-        estimated: point.gdp_gap_percent,
-      });
-    }
-  }
-
-  return Array.from(map.values()).sort((a, b) =>
-    a.date.localeCompare(b.date)
-  );
+  const block =
+    method === "average" ? data.estimated_average : data.estimated_maximum;
+  return block.data.map((p) => ({ date: p.date, value: p.gdp_gap_percent }));
 }
 
 export function GdpGapChart() {
+  const [method, setMethod] = useState<GdpGapMethod>("maximum");
   const { data, loading, error } = useApi<GdpGapResponse>("/gdp-gap");
+
+  const tabs: { key: GdpGapMethod; label: string }[] = [
+    { key: "cabinet_office", label: METHOD_LABEL.cabinet_office },
+    { key: "average", label: METHOD_LABEL.average },
+    { key: "maximum", label: METHOD_LABEL.maximum },
+  ];
+
+  const renderTabs = () => (
+    <div className="flex gap-1 mb-3 border-b border-gray-200">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          onClick={() => setMethod(t.key)}
+          className={
+            "px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors " +
+            (method === t.key
+              ? "border-blue-600 text-blue-700"
+              : "border-transparent text-gray-500 hover:text-gray-800")
+          }
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
 
   if (loading) {
     return (
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-lg font-semibold mb-4">GDPギャップ</h2>
+        {renderTabs()}
         <div className="h-64 flex items-center justify-center text-gray-400">
           読み込み中...
         </div>
@@ -65,6 +90,7 @@ export function GdpGapChart() {
     return (
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-lg font-semibold mb-4">GDPギャップ</h2>
+        {renderTabs()}
         <div className="h-64 flex items-center justify-center text-red-500">
           {error || "データの取得に失敗しました"}
         </div>
@@ -72,41 +98,43 @@ export function GdpGapChart() {
     );
   }
 
-  const merged = mergeData(data);
+  const series = buildSeries(data, method);
+
+  const sourceLabel =
+    method === "cabinet_office"
+      ? `出典: ${data.cabinet_office.source}`
+      : method === "average"
+      ? `推計: ${data.estimated_average.method}`
+      : `推計: ${data.estimated_maximum.method}`;
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-lg font-semibold mb-1">GDPギャップ</h2>
-      <p className="text-xs text-gray-500 mb-4">
-        出典: {data.cabinet_office.source} / 自前推計（{data.estimated.method}）
-      </p>
+      <p className="text-xs text-gray-500 mb-3">{METHOD_DESC[method]}</p>
+      {renderTabs()}
+      <p className="text-xs text-gray-500 mb-2">{sourceLabel}</p>
       <ResponsiveContainer width="100%" height={280}>
-        <LineChart data={merged}>
+        <LineChart data={series}>
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="date" tick={{ fontSize: 11 }} />
           <YAxis
             tick={{ fontSize: 11 }}
             tickFormatter={(v: number) => `${v}%`}
           />
-          <Tooltip
-            formatter={(value: number) => [`${value.toFixed(2)}%`]}
-          />
+          <Tooltip formatter={(value: number) => [`${value.toFixed(2)}%`]} />
           <Legend />
           <ReferenceLine y={0} stroke="#999" strokeDasharray="3 3" />
           <Line
             type="monotone"
-            dataKey="cabinet_office"
-            name="内閣府推計"
-            stroke="#2563eb"
-            strokeWidth={2}
-            dot={false}
-            connectNulls
-          />
-          <Line
-            type="monotone"
-            dataKey="estimated"
-            name="自前推計"
-            stroke="#dc2626"
+            dataKey="value"
+            name={METHOD_LABEL[method]}
+            stroke={
+              method === "cabinet_office"
+                ? "#2563eb"
+                : method === "average"
+                ? "#dc2626"
+                : "#059669"
+            }
             strokeWidth={2}
             dot={false}
             connectNulls

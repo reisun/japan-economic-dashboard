@@ -9,7 +9,10 @@ import json
 import os
 from datetime import datetime, timedelta
 
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "web", "public", "api", "v1")
+OUTPUT_DIRS = [
+    os.path.join(os.path.dirname(__file__), "web", "public", "api", "v1"),
+    os.path.join(os.path.dirname(__file__), "web", "dist", "api", "v1"),
+]
 
 # ---------------------------------------------------------------------------
 # HP Filter (pure Python implementation)
@@ -119,20 +122,79 @@ MOCK_REAL_GDP = [
 QUARTERS = [d["date"] for d in MOCK_CABINET_DATA]
 
 
-def generate_gdp_gap():
-    today = "2026-04-27"
+_MAXIMUM_NOMINAL_GDP = 560.0
+_MAXIMUM_FALLBACK_RATIO = 0.02
 
-    potential = hp_filter(MOCK_REAL_GDP, 1600.0)
 
-    estimated_data = []
-    for i, q in enumerate(QUARTERS):
-        gap_pct = round((MOCK_REAL_GDP[i] - potential[i]) / potential[i] * 100, 2)
-        estimated_data.append({
+def _percentile(values, p):
+    """純Pythonで線形補間パーセンタイル（numpy.percentile互換のlinearモード）。"""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    if len(s) == 1:
+        return s[0]
+    k = (len(s) - 1) * (p / 100.0)
+    f = int(k)
+    c = min(f + 1, len(s) - 1)
+    if f == c:
+        return s[f]
+    return s[f] + (s[c] - s[f]) * (k - f)
+
+
+def _estimate_average(real_gdp, quarters):
+    potential = hp_filter(real_gdp, 1600.0)
+    out = []
+    for i, q in enumerate(quarters):
+        gap_pct = round((real_gdp[i] - potential[i]) / potential[i] * 100, 2)
+        out.append({
             "date": q,
-            "real_gdp": round(MOCK_REAL_GDP[i], 1),
+            "real_gdp": round(real_gdp[i], 1),
             "potential_gdp": round(potential[i], 1),
             "gdp_gap_percent": gap_pct,
         })
+    return out
+
+
+def _estimate_maximum(real_gdp, quarters):
+    """最大概念MVP: HPトレンド + 正残差75%タイル。
+    正残差ゼロ時は NOMINAL_GDP*0.02 をフォールバック。
+    NOTE: 生産関数アプローチへの差し替えポイント。"""
+    trend = hp_filter(real_gdp, 1600.0)
+    residuals = [real_gdp[i] - trend[i] for i in range(len(real_gdp))]
+    positives = [r for r in residuals if r > 0]
+    if positives:
+        markup = _percentile(positives, 75)
+    else:
+        markup = _MAXIMUM_NOMINAL_GDP * _MAXIMUM_FALLBACK_RATIO
+    out = []
+    for i, q in enumerate(quarters):
+        pmax = trend[i] + markup
+        gap_pct = round((real_gdp[i] - pmax) / pmax * 100, 2)
+        out.append({
+            "date": q,
+            "real_gdp": round(real_gdp[i], 1),
+            "potential_gdp": round(pmax, 1),
+            "gdp_gap_percent": gap_pct,
+        })
+    return out
+
+
+def generate_gdp_gap():
+    today = "2026-04-27"
+
+    average_data = _estimate_average(MOCK_REAL_GDP, QUARTERS)
+    maximum_data = _estimate_maximum(MOCK_REAL_GDP, QUARTERS)
+
+    average_block = {
+        "data": average_data,
+        "method": "HP Filter (平均概念)",
+        "last_updated": today,
+    }
+    maximum_block = {
+        "data": maximum_data,
+        "method": "HP Filter + 75th-percentile markup (最大概念MVP)",
+        "last_updated": today,
+    }
 
     return {
         "cabinet_office": {
@@ -140,11 +202,10 @@ def generate_gdp_gap():
             "source": "内閣府",
             "last_updated": today,
         },
-        "estimated": {
-            "data": estimated_data,
-            "method": "HP Filter",
-            "last_updated": today,
-        },
+        "estimated_average": average_block,
+        "estimated_maximum": maximum_block,
+        # 後方互換エイリアス
+        "estimated": average_block,
     }
 
 
@@ -250,11 +311,15 @@ UIP_SENSITIVITY = 2.0
 PREDICTION_QUARTERS = ["2025-Q1", "2025-Q2", "2025-Q3", "2025-Q4"]
 
 
-def generate_prediction():
-    # Get GDP gap from estimated data
+def generate_prediction(method="maximum"):
+    # Get GDP gap based on method
     gdp_gap_data = generate_gdp_gap()
-    latest_estimated = gdp_gap_data["estimated"]["data"][-1]
-    gap_pct = latest_estimated["gdp_gap_percent"]
+    if method == "cabinet_office":
+        gap_pct = gdp_gap_data["cabinet_office"]["data"][-1]["gdp_gap_percent"]
+    elif method == "average":
+        gap_pct = gdp_gap_data["estimated_average"]["data"][-1]["gdp_gap_percent"]
+    else:  # maximum (default)
+        gap_pct = gdp_gap_data["estimated_maximum"]["data"][-1]["gdp_gap_percent"]
     gap_trillion = round(gap_pct / 100.0 * NOMINAL_GDP, 1)
 
     # Required fiscal spending
@@ -319,20 +384,25 @@ def generate_prediction():
 # ---------------------------------------------------------------------------
 
 def main():
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
+    prediction_max = generate_prediction("maximum")
     files = {
         "gdp-gap.json": generate_gdp_gap(),
         "fund-demand.json": generate_fund_demand(),
         "rates.json": generate_rates(),
-        "prediction.json": generate_prediction(),
+        # デフォルト = maximum（後方互換のため prediction.json も残す）
+        "prediction.json": prediction_max,
+        "prediction-maximum.json": prediction_max,
+        "prediction-average.json": generate_prediction("average"),
+        "prediction-cabinet_office.json": generate_prediction("cabinet_office"),
     }
 
-    for filename, data in files.items():
-        filepath = os.path.join(OUTPUT_DIR, filename)
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        print(f"Generated: {filepath}")
+    for output_dir in OUTPUT_DIRS:
+        os.makedirs(output_dir, exist_ok=True)
+        for filename, data in files.items():
+            filepath = os.path.join(output_dir, filename)
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            print(f"Generated: {filepath}")
 
 
 if __name__ == "__main__":
