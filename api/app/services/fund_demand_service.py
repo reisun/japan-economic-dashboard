@@ -1,15 +1,19 @@
-"""Fund demand data: BOJ Flow of Funds + Bank Lending.
+"""Fund demand data: FRED Bank Lending + BOJ Flow of Funds.
 
 Real data sources:
-  - Flow of Funds: https://www.boj.or.jp/statistics/sj/sjhiq.htm (CSV)
-  - Bank Lending: https://www.boj.or.jp/statistics/dl/depo/kashi/index.htm
+  - Bank Lending: FRED series CRDQJPAPABIS (BIS total credit to private
+    non-financial sector, quarterly, billions of JPY).
+  - Flow of Funds: BOJ CSV from https://www.boj.or.jp/statistics/sj/sjhiq.htm
+    (complex format; falls back to mock when parsing fails).
 
-For MVP we use mock data and fall back to it when live fetch fails.
+Each source falls back to mock data independently on failure.
 """
 
 from __future__ import annotations
 
 import logging
+import os
+from datetime import datetime, timedelta
 
 from app.models.schemas import (
     BankLending,
@@ -18,6 +22,7 @@ from app.models.schemas import (
     FlowOfFundsDataPoint,
     FundDemandResponse,
 )
+from app.services.cache import cached
 
 logger = logging.getLogger(__name__)
 
@@ -52,14 +57,123 @@ _MOCK_BANK_LENDING: list[dict] = [
 
 
 # ---------------------------------------------------------------------------
+# Quarter helpers
+# ---------------------------------------------------------------------------
+
+_Q_MONTH = {1: "01", 2: "04", 3: "07", 4: "10"}
+
+
+def _quarter_month(ts) -> str:
+    """Return 'YYYY-MM' for the start month of the quarter containing *ts*."""
+    q = (ts.month - 1) // 3 + 1
+    return f"{ts.year}-{_Q_MONTH[q]}"
+
+
+# ---------------------------------------------------------------------------
+# Live data fetchers
+# ---------------------------------------------------------------------------
+
+
+@cached("fred_bank_lending")
+def _fetch_bank_lending() -> list[BankLendingDataPoint] | None:
+    """Fetch bank lending from FRED (BIS total credit, quarterly, billions JPY)."""
+    api_key = os.getenv("FRED_API_KEY")
+    if not api_key:
+        logger.info("FRED_API_KEY not set -- using mock bank lending")
+        return None
+    try:
+        from fredapi import Fred
+
+        fred = Fred(api_key=api_key)
+        end = datetime.now()
+        # Fetch 6 years so we have 1 extra year for YoY calculation
+        start = end - timedelta(days=365 * 6)
+        series = fred.get_series(
+            "CRDQJPAPABIS", observation_start=start, observation_end=end
+        )
+        series = series.dropna()
+        if series.empty:
+            return None
+
+        # Convert billions JPY -> trillion JPY
+        series_trillion = series / 1000.0
+
+        # Build a dict keyed by (year, quarter) for YoY lookup
+        by_yq: dict[tuple[int, int], tuple] = {}
+        for ts, val in series_trillion.items():
+            q = (ts.month - 1) // 3 + 1
+            by_yq[(ts.year, q)] = (ts, float(val))
+
+        results: list[BankLendingDataPoint] = []
+        # Only output the last ~5 years (skip first year used for YoY baseline)
+        cutoff = end - timedelta(days=365 * 5)
+        for (year, q), (ts, val) in sorted(by_yq.items()):
+            if ts < cutoff:
+                continue
+            prev = by_yq.get((year - 1, q))
+            if prev is not None:
+                _, prev_val = prev
+                yoy = round((val - prev_val) / prev_val * 100, 1)
+            else:
+                yoy = 0.0
+            results.append(
+                BankLendingDataPoint(
+                    date=_quarter_month(ts),
+                    total_lending=round(val, 1),
+                    yoy_change_percent=yoy,
+                )
+            )
+        return results if results else None
+    except Exception:
+        logger.exception("FRED bank lending fetch failed")
+        return None
+
+
+@cached("boj_flow_of_funds")
+def _fetch_flow_of_funds() -> list[FlowOfFundsDataPoint] | None:
+    """Attempt to fetch BOJ Flow of Funds CSV.
+
+    The BOJ publishes flow-of-funds data in a complex multi-header CSV that
+    changes format between releases.  We attempt a best-effort parse but
+    expect this to fall back to mock data in most cases.
+    """
+    try:
+        import httpx
+
+        # The page lists CSV links; try to fetch the quarterly flow page
+        resp = httpx.get(
+            "https://www.boj.or.jp/statistics/sj/sjhiq.htm",
+            timeout=30.0,
+            follow_redirects=True,
+        )
+        resp.raise_for_status()
+        # The page is HTML listing CSV links -- reliable automated parsing
+        # of the actual CSV requires knowing the exact current filename and
+        # multi-header layout which varies.  Return None to use mock data.
+        logger.info("BOJ flow of funds page fetched but CSV parsing not yet implemented -- using mock")
+        return None
+    except Exception:
+        logger.exception("BOJ flow of funds fetch failed")
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 
 async def get_fund_demand() -> FundDemandResponse:
     """Return fund demand data. Falls back to mock on failure."""
-    flow_data = [FlowOfFundsDataPoint(**d) for d in _MOCK_FLOW_OF_FUNDS]
-    lending_data = [BankLendingDataPoint(**d) for d in _MOCK_BANK_LENDING]
+
+    # Bank lending (via FRED)
+    lending_data = _fetch_bank_lending()
+    if lending_data is None:
+        lending_data = [BankLendingDataPoint(**d) for d in _MOCK_BANK_LENDING]
+
+    # Flow of funds (BOJ CSV -- likely falls back to mock)
+    flow_data = _fetch_flow_of_funds()
+    if flow_data is None:
+        flow_data = [FlowOfFundsDataPoint(**d) for d in _MOCK_FLOW_OF_FUNDS]
 
     return FundDemandResponse(
         flow_of_funds=FlowOfFunds(data=flow_data),

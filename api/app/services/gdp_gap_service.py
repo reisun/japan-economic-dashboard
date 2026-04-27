@@ -1,17 +1,20 @@
-"""GDP Gap data: Cabinet Office CSV + HP-filter estimation.
+"""GDP Gap data: BOJ Output Gap Excel + FRED real GDP with HP-filter estimation.
 
-Real data source (Cabinet Office):
-  https://www5.cao.go.jp/keizai3/getsurei/getsurei-e.html
-  The CSV contains quarterly GDP gap estimates.
-  Parsing requires handling Shift-JIS encoding and specific column layouts.
+Real data sources:
+  - BOJ Output Gap: https://www.boj.or.jp/en/research/research_data/gap/gap.xlsx
+    Sheet "data1", col A = quarter (e.g. "2024.1Q"), col B = output gap %.
+  - FRED: series JPNRGDPEXP (Japan Real GDP, quarterly, seasonally adjusted).
 
-For MVP we use mock data and fall back to it when live fetch fails.
+Each source falls back to mock data independently on failure.
 """
 
 from __future__ import annotations
 
+import io
 import logging
-from datetime import date
+import os
+import re
+from datetime import date, datetime, timedelta
 
 import numpy as np
 
@@ -22,6 +25,7 @@ from app.models.schemas import (
     GdpGapDataPoint,
     GdpGapResponse,
 )
+from app.services.cache import cached
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +114,100 @@ def _estimate_gdp_gap(
     return results
 
 
+def _boj_quarter_to_label(raw: str) -> str | None:
+    """Convert BOJ date format '2024.1Q' to 'YYYY-QN'."""
+    m = re.match(r"(\d{4})\.(\d)Q", str(raw).strip())
+    if m:
+        return f"{m.group(1)}-Q{m.group(2)}"
+    return None
+
+
+def _pandas_quarter_to_label(ts) -> str:
+    """Convert a pandas Timestamp (quarter-end) to 'YYYY-QN'."""
+    return f"{ts.year}-Q{(ts.month - 1) // 3 + 1}"
+
+
+# ---------------------------------------------------------------------------
+# Live data fetchers
+# ---------------------------------------------------------------------------
+
+
+@cached("boj_gdp_gap")
+def _fetch_boj_gdp_gap() -> list[GdpGapDataPoint] | None:
+    """Fetch BOJ output gap data from their published Excel file."""
+    try:
+        import httpx
+        import pandas as pd
+
+        resp = httpx.get(
+            "https://www.boj.or.jp/en/research/research_data/gap/gap.xlsx",
+            timeout=30.0,
+            follow_redirects=True,
+        )
+        resp.raise_for_status()
+
+        df = pd.read_excel(
+            io.BytesIO(resp.content),
+            sheet_name="data1",
+            header=None,
+            engine="openpyxl",
+        )
+        # Data rows start at index 5 (rows 0-4 are headers/units).
+        # Col 0 = quarter label (e.g. "2024.1Q"), Col 1 = output gap %.
+        data_df = df.iloc[5:].copy()
+        data_df = data_df.dropna(subset=[0, 1])  # need both date and gap value
+
+        results: list[GdpGapDataPoint] = []
+        for _, row in data_df.iterrows():
+            label = _boj_quarter_to_label(row[0])
+            if label is None:
+                continue
+            results.append(
+                GdpGapDataPoint(
+                    date=label,
+                    gdp_gap_percent=round(float(row[1]), 2),
+                )
+            )
+
+        # Return last 20 quarters (~5 years)
+        if results:
+            return results[-20:]
+        return None
+    except Exception:
+        logger.exception("BOJ GDP gap fetch failed")
+        return None
+
+
+@cached("fred_real_gdp")
+def _fetch_real_gdp() -> tuple[list[float], list[str]] | None:
+    """Fetch Japan real GDP quarterly data from FRED."""
+    api_key = os.getenv("FRED_API_KEY")
+    if not api_key:
+        logger.info("FRED_API_KEY not set -- using mock real GDP")
+        return None
+    try:
+        from fredapi import Fred
+
+        fred = Fred(api_key=api_key)
+        end = datetime.now()
+        start = end - timedelta(days=365 * 5)
+        series = fred.get_series(
+            "JPNRGDPEXP", observation_start=start, observation_end=end
+        )
+        series = series.dropna()
+        if series.empty:
+            return None
+
+        gdp_values: list[float] = [round(float(v), 1) for v in series.values]
+        quarter_labels: list[str] = [
+            _pandas_quarter_to_label(ts) for ts in series.index
+        ]
+        return (gdp_values, quarter_labels) if gdp_values else None
+    except Exception:
+        logger.exception("FRED real GDP fetch failed")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -119,12 +217,20 @@ async def get_gdp_gap() -> GdpGapResponse:
     """Return GDP gap data. Falls back to mock on failure."""
     today = date.today().isoformat()
 
-    # Cabinet Office data — mock for now
-    cabinet_data = [GdpGapDataPoint(**d) for d in _MOCK_CABINET_DATA]
+    # BOJ output gap data (replaces Cabinet Office mock)
+    boj_data = _fetch_boj_gdp_gap()
+    using_real_boj = boj_data is not None
+    if boj_data is None:
+        boj_data = [GdpGapDataPoint(**d) for d in _MOCK_CABINET_DATA]
 
-    # HP-filter estimation
+    # Real GDP -> HP-filter estimation
+    real_gdp_result = _fetch_real_gdp()
     try:
-        estimated_data = _estimate_gdp_gap(_MOCK_REAL_GDP, _QUARTERS)
+        if real_gdp_result is not None:
+            gdp_values, quarters = real_gdp_result
+            estimated_data = _estimate_gdp_gap(gdp_values, quarters)
+        else:
+            estimated_data = _estimate_gdp_gap(_MOCK_REAL_GDP, _QUARTERS)
     except Exception:
         logger.exception("HP filter estimation failed, using raw mock")
         estimated_data = [
@@ -135,6 +241,10 @@ async def get_gdp_gap() -> GdpGapResponse:
         ]
 
     return GdpGapResponse(
-        cabinet_office=CabinetOfficeGdpGap(data=cabinet_data, last_updated=today),
+        cabinet_office=CabinetOfficeGdpGap(
+            data=boj_data,
+            source="日銀" if using_real_boj else "内閣府",
+            last_updated=today,
+        ),
         estimated=EstimatedGdpGap(data=estimated_data, last_updated=today),
     )
