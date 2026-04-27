@@ -1,0 +1,188 @@
+{
+  "current_gap": {
+    "gdp_gap_percent": -2.87,
+    "gdp_gap_trillion_yen": -16.1
+  },
+  "required_fiscal_spending": {
+    "amount_trillion_yen": 16.1,
+    "multiplier": 1.0,
+    "note": "デフレギャップ解消に必要な財政支出",
+    "scenario_mode": "auto",
+    "auto_amount_trillion_yen": 16.1
+  },
+  "impact_prediction": {
+    "interest_rate": [
+      {
+        "date": "2024-Q4",
+        "predicted_jgb_10y": 0.92,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_jgb_10y": 0.89,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_jgb_10y": 0.85,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      }
+    ],
+    "exchange_rate": [
+      {
+        "date": "2024-Q4",
+        "predicted_usdjpy": 153.2,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_usdjpy": 152.8,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_usdjpy": 152.2,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      }
+    ],
+    "model": "VAR(1)",
+    "engine": "var",
+    "assumptions": {
+      "lag_order": 1,
+      "n_obs": 12,
+      "n_steps": 8,
+      "variables": [
+        "gdp_gap",
+        "jgb_10y",
+        "usdjpy",
+        "cpi_core_core"
+      ],
+      "fiscal_multiplier": 1.0
+    },
+    "irf": [
+      {
+        "horizon": 0,
+        "gdp_gap": 0.1786,
+        "jgb_10y": 0.0,
+        "usdjpy": 0.0,
+        "cpi_core_core": 0.0
+      },
+      {
+        "horizon": 1,
+        "gdp_gap": 0.0171,
+        "jgb_10y": -0.0015,
+        "usdjpy": -0.025,
+        "cpi_core_core": 0.0016
+      },
+      {
+        "horizon": 2,
+        "gdp_gap": 0.0013,
+        "jgb_10y": -0.0002,
+        "usdjpy": -0.004,
+        "cpi_core_core": 0.0002
+      },
+      {
+        "horizon": 3,
+        "gdp_gap": 0.0001,
+        "jgb_10y": -0.0,
+        "usdjpy": -0.0,
+        "cpi_core_core": 0.0
+      },
+      {
+        "horizon": 4,
+        "gdp_gap": 0.0,
+        "jgb_10y": -0.0,
+        "usdjpy": -0.0,
+        "cpi_core_core": 0.0
+      },
+      {
+        "horizon": 5,
+        "gdp_gap": -0.0,
+        "jgb_10y": -0.0,
+        "usdjpy": -0.0,
+        "cpi_core_core": 0.0
+      },
+      {
+        "horizon": 6,
+        "gdp_gap": -0.0,
+        "jgb_10y": -0.0,
+        "usdjpy": -0.0,
+        "cpi_core_core": -0.0
+      },
+      {
+        "horizon": 7,
+        "gdp_gap": -0.0,
+        "jgb_10y": 0.0,
+        "usdjpy": 0.0,
+        "cpi_core_core": -0.0
+      },
+      {
+        "horizon": 8,
+        "gdp_gap": -0.0,
+        "jgb_10y": 0.0,
+        "usdjpy": 0.0,
+        "cpi_core_core": -0.0
+      }
+    ]
+  }
+}

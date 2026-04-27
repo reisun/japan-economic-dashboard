@@ -54,6 +54,7 @@
       }
     ],
     "model": "IS-LM",
+    "engine": "is_lm",
     "assumptions": {
       "money_demand_elasticity": 0.5,
       "investment_sensitivity": 0.3,

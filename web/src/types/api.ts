@@ -101,6 +101,17 @@ export interface PredictionExchangePoint {
   type: "actual" | "prediction";
 }
 
+/** 予測エンジン: is_lm (構造) | var (VAR) | ar1 (AR(1) ベンチマーク) */
+export type PredictionEngine = "is_lm" | "var" | "ar1";
+
+export interface IrfPoint {
+  horizon: number;
+  gdp_gap: number | null;
+  jgb_10y: number | null;
+  usdjpy: number | null;
+  cpi_core_core: number | null;
+}
+
 export interface PredictionResponse {
   current_gap: {
     gdp_gap_percent: number;
@@ -119,11 +130,17 @@ export interface PredictionResponse {
     interest_rate: PredictionRatePoint[];
     exchange_rate: PredictionExchangePoint[];
     model: string;
+    engine?: PredictionEngine;
     assumptions: {
-      money_demand_elasticity: number;
-      investment_sensitivity: number;
-      fiscal_multiplier: number;
+      money_demand_elasticity?: number | null;
+      investment_sensitivity?: number | null;
+      fiscal_multiplier?: number | null;
+      lag_order?: number | null;
+      n_obs?: number | null;
+      n_steps?: number | null;
+      variables?: string[] | null;
     };
+    irf?: IrfPoint[] | null;
   };
 }
 

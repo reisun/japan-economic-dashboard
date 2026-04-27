@@ -13,6 +13,9 @@ from app.services.prediction_service import (
 router = APIRouter()
 
 
+VALID_ENGINES = ("is_lm", "var", "ar1")
+
+
 @router.get("/prediction", response_model=PredictionResponse)
 async def prediction(
     method: str = Query(
@@ -22,14 +25,23 @@ async def prediction(
     fiscal_spending_trillion: float | None = Query(
         None,
         description=(
-            "任意の財政支出額（兆円）。指定時はこの値で IS-LM インパクトを計算する。"
+            "任意の財政支出額（兆円）。指定時はこの値でインパクトを計算する。"
             "未指定時は GDP ギャップから自動算出。"
             f"範囲: {FISCAL_SPENDING_MIN}〜{FISCAL_SPENDING_MAX}"
+        ),
+    ),
+    engine: str = Query(
+        "is_lm",
+        description=(
+            "予測エンジン: is_lm (構造モデル, デフォルト) | var (Vector Autoregression) | "
+            "ar1 (AR(1) ベンチマーク)"
         ),
     ),
 ):
     if method not in VALID_METHODS:
         method = "maximum"
+    if engine not in VALID_ENGINES:
+        engine = "is_lm"
     if fiscal_spending_trillion is not None:
         if (
             fiscal_spending_trillion < FISCAL_SPENDING_MIN
@@ -45,4 +57,5 @@ async def prediction(
     return await get_prediction(
         method=method,
         fiscal_spending_trillion=fiscal_spending_trillion,
+        engine=engine,
     )
