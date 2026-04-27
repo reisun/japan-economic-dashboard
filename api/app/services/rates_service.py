@@ -17,6 +17,10 @@ from datetime import datetime, timedelta
 
 from app.services.cache import cached
 from app.services.common_range import filter_to_actual_range
+from app.services.data_utils import (
+    record_data_source_status,
+    warn_fred_key_missing_once,
+)
 
 from app.models.schemas import (
     BojRateDataPoint,
@@ -67,7 +71,9 @@ def _fetch_fred_rates() -> list[FredRateDataPoint] | None:
     """Fetch US interest rates from FRED."""
     api_key = os.getenv("FRED_API_KEY")
     if not api_key:
-        logger.info("FRED_API_KEY not set — using mock data")
+        warn_fred_key_missing_once()
+        logger.debug("FRED_API_KEY not set — using mock for fred_rates")
+        record_data_source_status("fred:rates", ok=False, detail="api_key_missing")
         return None
     try:
         from fredapi import Fred
@@ -93,9 +99,18 @@ def _fetch_fred_rates() -> list[FredRateDataPoint] | None:
                     fed_funds_rate=round(float(ff), 2) if ff is not None else None,
                 )
             )
-        return results if results else None
-    except Exception:
+        if results:
+            record_data_source_status(
+                "fred:rates", ok=True, detail=f"points={len(results)}"
+            )
+            return results
+        record_data_source_status("fred:rates", ok=False, detail="empty_series")
+        return None
+    except Exception as e:
         logger.exception("FRED rates fetch failed")
+        record_data_source_status(
+            "fred:rates", ok=False, detail=f"exception:{type(e).__name__}"
+        )
         return None
 
 
@@ -104,6 +119,8 @@ def _fetch_fred_fx() -> list[ExchangeRateDataPoint] | None:
     """Fetch USD/JPY from FRED."""
     api_key = os.getenv("FRED_API_KEY")
     if not api_key:
+        warn_fred_key_missing_once()
+        record_data_source_status("fred:fx", ok=False, detail="api_key_missing")
         return None
     try:
         from fredapi import Fred
@@ -113,12 +130,22 @@ def _fetch_fred_fx() -> list[ExchangeRateDataPoint] | None:
         start = end - timedelta(days=365)
         fx = fred.get_series("DEXJPUS", observation_start=start, observation_end=end)
         fx_m = fx.resample("MS").last().dropna()
-        return [
+        results = [
             ExchangeRateDataPoint(date=dt.strftime("%Y-%m-%d"), usdjpy=round(float(v), 1))
             for dt, v in fx_m.items()
-        ] or None
-    except Exception:
+        ]
+        if results:
+            record_data_source_status(
+                "fred:fx", ok=True, detail=f"points={len(results)}"
+            )
+            return results
+        record_data_source_status("fred:fx", ok=False, detail="empty_series")
+        return None
+    except Exception as e:
         logger.exception("FRED FX fetch failed")
+        record_data_source_status(
+            "fred:fx", ok=False, detail=f"exception:{type(e).__name__}"
+        )
         return None
 
 
@@ -155,7 +182,9 @@ def _fetch_boj_rates() -> list[BojRateDataPoint] | None:
     """
     api_key = os.getenv("FRED_API_KEY")
     if not api_key:
-        logger.info("FRED_API_KEY not set — using mock BOJ rates")
+        warn_fred_key_missing_once()
+        logger.debug("FRED_API_KEY not set — using mock BOJ rates")
+        record_data_source_status("fred:boj_rates", ok=False, detail="api_key_missing")
         return None
     try:
         from fredapi import Fred
@@ -186,9 +215,18 @@ def _fetch_boj_rates() -> list[BojRateDataPoint] | None:
                     jgb_10y_yield=round(float(jgb_m[dt]), 2),
                 )
             )
-        return results if results else None
-    except Exception:
+        if results:
+            record_data_source_status(
+                "fred:boj_rates", ok=True, detail=f"points={len(results)}"
+            )
+            return results
+        record_data_source_status("fred:boj_rates", ok=False, detail="empty_series")
+        return None
+    except Exception as e:
         logger.exception("BOJ rates fetch failed (via FRED)")
+        record_data_source_status(
+            "fred:boj_rates", ok=False, detail=f"exception:{type(e).__name__}"
+        )
         return None
 
 

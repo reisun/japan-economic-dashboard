@@ -27,6 +27,10 @@ from app.models.schemas import (
 )
 from app.services.cache import cached
 from app.services.common_range import filter_to_actual_range
+from app.services.data_utils import (
+    record_data_source_status,
+    warn_fred_key_missing_once,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -513,7 +517,11 @@ def _fetch_real_gdp() -> tuple[list[float], list[str]] | None:
     """Fetch Japan real GDP quarterly data from FRED."""
     api_key = os.getenv("FRED_API_KEY")
     if not api_key:
-        logger.info("FRED_API_KEY not set -- using mock real GDP")
+        warn_fred_key_missing_once()
+        logger.debug("FRED_API_KEY not set -- using mock real GDP")
+        record_data_source_status(
+            "fred:JPNRGDPEXP", ok=False, detail="api_key_missing"
+        )
         return None
     try:
         from fredapi import Fred
@@ -532,9 +540,22 @@ def _fetch_real_gdp() -> tuple[list[float], list[str]] | None:
         quarter_labels: list[str] = [
             _pandas_quarter_to_label(ts) for ts in series.index
         ]
-        return (gdp_values, quarter_labels) if gdp_values else None
-    except Exception:
+        if gdp_values:
+            record_data_source_status(
+                "fred:JPNRGDPEXP",
+                ok=True,
+                detail=f"points={len(gdp_values)}",
+            )
+            return (gdp_values, quarter_labels)
+        record_data_source_status(
+            "fred:JPNRGDPEXP", ok=False, detail="empty_series"
+        )
+        return None
+    except Exception as e:
         logger.exception("FRED real GDP fetch failed")
+        record_data_source_status(
+            "fred:JPNRGDPEXP", ok=False, detail=f"exception:{type(e).__name__}"
+        )
         return None
 
 

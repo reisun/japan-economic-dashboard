@@ -31,7 +31,12 @@ from app.models.schemas import (
 )
 from app.services.cache import cached
 from app.services.common_range import filter_to_actual_range
-from app.services.data_utils import estat_available, fetch_estat_stats_data
+from app.services.data_utils import (
+    estat_available,
+    fetch_estat_stats_data,
+    record_data_source_status,
+    warn_fred_key_missing_once,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +107,11 @@ def _fetch_bank_lending() -> list[BankLendingDataPoint] | None:
     """Fetch bank lending from FRED (BIS total credit, quarterly, billions JPY)."""
     api_key = os.getenv("FRED_API_KEY")
     if not api_key:
-        logger.info("FRED_API_KEY not set -- using mock bank lending")
+        warn_fred_key_missing_once()
+        logger.debug("FRED_API_KEY not set -- using mock bank lending")
+        record_data_source_status(
+            "fred:bank_lending", ok=False, detail="api_key_missing"
+        )
         return None
     try:
         from fredapi import Fred
@@ -146,9 +155,20 @@ def _fetch_bank_lending() -> list[BankLendingDataPoint] | None:
                     yoy_change_percent=yoy,
                 )
             )
-        return results if results else None
-    except Exception:
+        if results:
+            record_data_source_status(
+                "fred:bank_lending", ok=True, detail=f"points={len(results)}"
+            )
+            return results
+        record_data_source_status(
+            "fred:bank_lending", ok=False, detail="empty_series"
+        )
+        return None
+    except Exception as e:
         logger.exception("FRED bank lending fetch failed")
+        record_data_source_status(
+            "fred:bank_lending", ok=False, detail=f"exception:{type(e).__name__}"
+        )
         return None
 
 
