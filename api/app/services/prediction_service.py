@@ -152,8 +152,11 @@ async def get_prediction(method: str = "maximum") -> PredictionResponse:
         gap_pct = -2.5
         gap_trillion = -14.0
 
-    # Required fiscal spending to close the gap
-    required_spending = abs(gap_trillion) / FISCAL_MULTIPLIER
+    # Required fiscal spending to close the gap.
+    # 需給ギャップ < 0 (デフレ): 拡張的財政支出が必要 → 正の値
+    # 需給ギャップ > 0 (過熱): 引き締め的財政運営が必要 → 負の値
+    # 符号付きで返し、IS-LM の金利・為替インパクトもこの符号に応じて方向付けする。
+    required_spending = -gap_trillion / FISCAL_MULTIPLIER
 
     # IS-LM impact
     quarters = _build_prediction_quarters()
@@ -186,6 +189,11 @@ async def get_prediction(method: str = "maximum") -> PredictionResponse:
         required_fiscal_spending=RequiredFiscalSpending(
             amount_trillion_yen=round(required_spending, 1),
             multiplier=FISCAL_MULTIPLIER,
+            note=(
+                "デフレギャップ解消に必要な財政支出"
+                if required_spending >= 0
+                else "インフレギャップ抑制に必要な財政引き締め"
+            ),
         ),
         impact_prediction=ImpactPrediction(
             interest_rate=interest_predictions,

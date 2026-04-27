@@ -322,8 +322,8 @@ def generate_prediction(method="maximum"):
         gap_pct = gdp_gap_data["estimated_maximum"]["data"][-1]["gdp_gap_percent"]
     gap_trillion = round(gap_pct / 100.0 * NOMINAL_GDP, 1)
 
-    # Required fiscal spending
-    required_spending = abs(gap_trillion) / FISCAL_MULTIPLIER
+    # Required fiscal spending (符号付き; マイナス需給ギャップ → 拡張、プラス → 引き締め)
+    required_spending = -gap_trillion / FISCAL_MULTIPLIER
 
     # IS-LM impact calculation
     total_dr = (
@@ -364,7 +364,11 @@ def generate_prediction(method="maximum"):
         "required_fiscal_spending": {
             "amount_trillion_yen": round(required_spending, 1),
             "multiplier": FISCAL_MULTIPLIER,
-            "note": "デフレギャップ解消に必要な財政支出",
+            "note": (
+                "デフレギャップ解消に必要な財政支出"
+                if required_spending >= 0
+                else "インフレギャップ抑制に必要な財政引き締め"
+            ),
         },
         "impact_prediction": {
             "interest_rate": interest_predictions,
