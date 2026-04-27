@@ -16,6 +16,7 @@ import os
 from datetime import datetime, timedelta
 
 from app.services.cache import cached
+from app.services.common_range import filter_to_actual_range
 
 from app.models.schemas import (
     BojRateDataPoint,
@@ -218,6 +219,12 @@ async def get_rates() -> RatesResponse:
     fred_fx = _fetch_fred_fx()
     if fred_fx is None:
         fred_fx = [ExchangeRateDataPoint(**d) for d in _MOCK_FRED_FX]
+
+    # 共通レンジ（GDPギャップ実績期間）に揃える
+    fred_rates = filter_to_actual_range(fred_rates, label="fred_rates")
+    boj_rates = filter_to_actual_range(boj_rates, label="boj_rates")
+    yahoo_fx = filter_to_actual_range(yahoo_fx, label="yahoo_fx")
+    fred_fx = filter_to_actual_range(fred_fx, label="fred_fx")
 
     return RatesResponse(
         interest_rates=InterestRates(fred=fred_rates, boj=boj_rates),

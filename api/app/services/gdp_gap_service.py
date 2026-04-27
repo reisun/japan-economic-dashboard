@@ -26,6 +26,7 @@ from app.models.schemas import (
     GdpGapResponse,
 )
 from app.services.cache import cached
+from app.services.common_range import filter_to_actual_range
 
 logger = logging.getLogger(__name__)
 
@@ -572,6 +573,14 @@ async def get_gdp_gap() -> GdpGapResponse:
         ]
         maximum_data = average_data
         civilian_data = average_data
+
+    # 共通レンジ（GDPギャップ実績期間）に揃える。
+    # estimated_* は GDP 実データ自体の長さがレンジの基準なので原則変わらないが、
+    # 一貫性のため通す。BOJ output gap は系列長が異なる可能性があるためフィルタ。
+    boj_data = filter_to_actual_range(boj_data, label="boj_output_gap")
+    average_data = filter_to_actual_range(average_data, label="gdp_gap_average")
+    maximum_data = filter_to_actual_range(maximum_data, label="gdp_gap_maximum")
+    civilian_data = filter_to_actual_range(civilian_data, label="gdp_gap_civilian")
 
     average = EstimatedGdpGap(
         data=average_data, method="HP Filter (平均概念)", last_updated=today

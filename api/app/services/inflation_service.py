@@ -32,6 +32,7 @@ import logging
 from datetime import date
 
 from app.models.schemas import InflationDataPoint, InflationResponse
+from app.services.common_range import filter_to_actual_range
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,8 @@ async def get_inflation() -> InflationResponse:
         else "総務省CPI（コアコア） / 内閣府GDPデフレータ / 厚労省毎月勤労統計（モック）"
     )
     points = [InflationDataPoint(**d) for d in raw]
+    # 共通レンジ（GDPギャップ実績期間）に揃える
+    points = filter_to_actual_range(points, label="inflation")
     return InflationResponse(
         data=points,
         source=source,
