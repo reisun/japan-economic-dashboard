@@ -1,13 +1,14 @@
 import { useState, useEffect } from "react";
 import type { ApiState } from "../types/api";
 
-// For GitHub Pages: fetch from static JSON files under public/api/v1/
-const API_BASE = `${import.meta.env.BASE_URL}api/v1`;
+// Use VITE_API_BASE_URL if set, otherwise default to production API
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://reisun.asuscomm.com/japan-economic-dashboard/api/v1";
 
 function buildUrl(path: string): string {
-  // path is like "/gdp-gap", convert to static JSON file path
   const cleanPath = path.startsWith("/") ? path.slice(1) : path;
-  return `${API_BASE}/${cleanPath}.json`;
+  return `${API_BASE}/${cleanPath}`;
 }
 
 export function useApi<T>(path: string): ApiState<T> {

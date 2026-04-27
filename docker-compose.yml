@@ -13,11 +13,11 @@ services:
     # volumes:
     #   - ./api:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    networks:
+      japan-economic-dashboard-net:
+        aliases:
+          - japan-economic-dashboard-api
 
-  web:
-    build:
-      context: ./web
-    ports:
-      - "5174:80"
-    depends_on:
-      - api
+networks:
+  japan-economic-dashboard-net:
+    name: japan-economic-dashboard-net
