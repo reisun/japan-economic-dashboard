@@ -263,44 +263,90 @@ def _estimate_maximum(real_gdp, quarters):
 
 
 # ---------------------------------------------------------------------------
-# 在野試算 (civilian) ハードコード系列
+# 在野試算 (civilian): 線形ピーク・トゥ・ピーク・トレンド (高橋洋一氏方式)
 # ---------------------------------------------------------------------------
-# 高橋洋一・三橋貴明・藤井聡らの代表的試算レンジに基づく合成値。
-# 公的機関 (内閣府/日銀) より深いデフレギャップを示す。
-# 詳細は api/app/services/gdp_gap_service.py のコメントを参照。
-MOCK_CIVILIAN_GAP_PCT = [
-    {"date": "2022-Q1", "gdp_gap_percent": -8.5},
-    {"date": "2022-Q2", "gdp_gap_percent": -8.0},
-    {"date": "2022-Q3", "gdp_gap_percent": -7.5},
-    {"date": "2022-Q4", "gdp_gap_percent": -7.0},
-    {"date": "2023-Q1", "gdp_gap_percent": -6.2},
-    {"date": "2023-Q2", "gdp_gap_percent": -5.8},
-    {"date": "2023-Q3", "gdp_gap_percent": -5.5},
-    {"date": "2023-Q4", "gdp_gap_percent": -5.0},
-    {"date": "2024-Q1", "gdp_gap_percent": -5.3},
-    {"date": "2024-Q2", "gdp_gap_percent": -5.5},
-    {"date": "2024-Q3", "gdp_gap_percent": -5.8},
-    {"date": "2024-Q4", "gdp_gap_percent": -6.0},
-]
+# 高橋洋一氏のGDPギャップ試算 (典型的にコロナ前ピーク群を結ぶ直線) を
+# 参考にした実装。グラフ形状から推定したアルゴリズムであり、個別論考の
+# 数式そのものではない。詳細は api/app/services/gdp_gap_service.py を参照。
+K_PEAK_WINDOW = 16  # ピーク包絡窓 (クォーター数, 4年)
+SHOCK_DROP_THRESHOLD = 0.05  # 5% 以上の落ち込みを外的ショックとして除外
+BUFFER_TRILLION = 0.5  # 包絡上方マージン (兆円)
+
+
+def _peak_to_peak_linear_trend(y, k_window=K_PEAK_WINDOW,
+                               shock_drop_threshold=SHOCK_DROP_THRESHOLD,
+                               buffer=BUFFER_TRILLION):
+    """高橋洋一氏方式: ピーク群への線形回帰 + 上方包絡シフト。
+
+    Returns (potential_list, intercept_a, slope_b).
+    """
+    n = len(y)
+    if n == 0:
+        return [], 0.0, 0.0
+    if n == 1:
+        return [float(y[0])], float(y[0]), 0.0
+
+    # 1. ピーク包絡
+    peak_envelope = []
+    for t in range(n):
+        lo = max(0, t - k_window + 1)
+        peak_envelope.append(max(y[lo:t + 1]))
+
+    # 2. 外的ショック除外 (直近4Qピークから shock_drop_threshold 以上の落ち込み)
+    include = []
+    for t in range(n):
+        lo4 = max(0, t - 3)
+        recent_peak = max(y[lo4:t + 1])
+        drop = (recent_peak - y[t]) / recent_peak if recent_peak > 0 else 0.0
+        include.append(drop < shock_drop_threshold)
+
+    # 3. ピーク群に最小二乗線形回帰
+    ts = [float(t) for t, inc in enumerate(include) if inc]
+    ps = [peak_envelope[t] for t, inc in enumerate(include) if inc]
+    if len(ts) < 2:
+        ts = [float(t) for t in range(n)]
+        ps = list(peak_envelope)
+
+    m = len(ts)
+    sum_t = sum(ts)
+    sum_p = sum(ps)
+    sum_tt = sum(t * t for t in ts)
+    sum_tp = sum(ts[i] * ps[i] for i in range(m))
+    denom = m * sum_tt - sum_t * sum_t
+    if denom == 0:
+        b = 0.0
+        a = sum_p / m
+    else:
+        b = (m * sum_tp - sum_t * sum_p) / denom
+        a = (sum_p - b * sum_t) / m
+
+    # 4. 包絡条件: 全期間で潜在 ≥ 実績 を保証
+    line = [a + b * t for t in range(n)]
+    deficit = max(y[t] - line[t] for t in range(n))
+    if deficit > 0:
+        a = a + deficit
+    a = a + buffer
+    potential = [a + b * t for t in range(n)]
+    return potential, a, b
 
 
 def _estimate_civilian(real_gdp, quarters):
-    """在野試算: ハードコード gap% から potential を逆算。"""
+    """在野試算: 線形ピーク・トゥ・ピーク・トレンド (高橋洋一氏方式)。"""
     n = len(real_gdp)
-    civ = list(MOCK_CIVILIAN_GAP_PCT)
-    if len(civ) > n:
-        civ = civ[-n:]
-    elif len(civ) < n:
-        civ = [civ[0]] * (n - len(civ)) + civ
+    if n == 0:
+        return []
+    y = [float(v) for v in real_gdp]
+    potential, _a, _b = _peak_to_peak_linear_trend(y)
 
     out = []
     for i, q in enumerate(quarters):
-        gap_pct = float(civ[i]["gdp_gap_percent"])
-        y = float(real_gdp[i])
-        pot = y / (1.0 + gap_pct / 100.0)
+        pot = potential[i]
+        if pot <= 0:
+            pot = y[i]
+        gap_pct = (y[i] - pot) / pot * 100
         out.append({
             "date": q,
-            "real_gdp": round(y, 1),
+            "real_gdp": round(y[i], 1),
             "potential_gdp": round(pot, 1),
             "gdp_gap_percent": round(gap_pct, 2),
         })
@@ -329,10 +375,7 @@ def generate_gdp_gap():
     }
     civilian_block = {
         "data": civilian_data,
-        "method": (
-            "在野試算 (高橋洋一・三橋貴明・藤井聡らの代表的試算レンジに基づく合成値; "
-            "個別論考をもとに将来差し替え)"
-        ),
+        "method": "線形ピーク・トゥ・ピーク・トレンド (高橋洋一氏方式に基づく在野試算)",
         "last_updated": today,
     }
 

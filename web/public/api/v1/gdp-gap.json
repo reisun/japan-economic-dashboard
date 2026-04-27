@@ -214,77 +214,77 @@
       {
         "date": "2022-Q1",
         "real_gdp": 535.0,
-        "potential_gdp": 584.7,
-        "gdp_gap_percent": -8.5
+        "potential_gdp": 540.5,
+        "gdp_gap_percent": -1.01
       },
       {
         "date": "2022-Q2",
         "real_gdp": 537.0,
-        "potential_gdp": 583.7,
-        "gdp_gap_percent": -8.0
+        "potential_gdp": 542.0,
+        "gdp_gap_percent": -0.93
       },
       {
         "date": "2022-Q3",
         "real_gdp": 539.5,
-        "potential_gdp": 583.2,
-        "gdp_gap_percent": -7.5
+        "potential_gdp": 543.6,
+        "gdp_gap_percent": -0.76
       },
       {
         "date": "2022-Q4",
         "real_gdp": 542.0,
-        "potential_gdp": 582.8,
-        "gdp_gap_percent": -7.0
+        "potential_gdp": 545.2,
+        "gdp_gap_percent": -0.59
       },
       {
         "date": "2023-Q1",
         "real_gdp": 544.0,
-        "potential_gdp": 580.0,
-        "gdp_gap_percent": -6.2
+        "potential_gdp": 546.8,
+        "gdp_gap_percent": -0.51
       },
       {
         "date": "2023-Q2",
         "real_gdp": 546.0,
-        "potential_gdp": 579.6,
-        "gdp_gap_percent": -5.8
+        "potential_gdp": 548.3,
+        "gdp_gap_percent": -0.43
       },
       {
         "date": "2023-Q3",
         "real_gdp": 548.5,
-        "potential_gdp": 580.4,
-        "gdp_gap_percent": -5.5
+        "potential_gdp": 549.9,
+        "gdp_gap_percent": -0.26
       },
       {
         "date": "2023-Q4",
         "real_gdp": 551.0,
-        "potential_gdp": 580.0,
-        "gdp_gap_percent": -5.0
+        "potential_gdp": 551.5,
+        "gdp_gap_percent": -0.09
       },
       {
         "date": "2024-Q1",
         "real_gdp": 549.0,
-        "potential_gdp": 579.7,
-        "gdp_gap_percent": -5.3
+        "potential_gdp": 553.1,
+        "gdp_gap_percent": -0.74
       },
       {
         "date": "2024-Q2",
         "real_gdp": 547.0,
-        "potential_gdp": 578.8,
-        "gdp_gap_percent": -5.5
+        "potential_gdp": 554.7,
+        "gdp_gap_percent": -1.38
       },
       {
         "date": "2024-Q3",
         "real_gdp": 545.0,
-        "potential_gdp": 578.6,
-        "gdp_gap_percent": -5.8
+        "potential_gdp": 556.2,
+        "gdp_gap_percent": -2.02
       },
       {
         "date": "2024-Q4",
         "real_gdp": 543.0,
-        "potential_gdp": 577.7,
-        "gdp_gap_percent": -6.0
+        "potential_gdp": 557.8,
+        "gdp_gap_percent": -2.65
       }
     ],
-    "method": "在野試算 (高橋洋一・三橋貴明・藤井聡らの代表的試算レンジに基づく合成値; 個別論考をもとに将来差し替え)",
+    "method": "線形ピーク・トゥ・ピーク・トレンド (高橋洋一氏方式に基づく在野試算)",
     "last_updated": "2026-04-27"
   },
   "estimated": {

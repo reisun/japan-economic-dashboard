@@ -1,10 +1,10 @@
 {
   "current_gap": {
-    "gdp_gap_percent": -6.0,
-    "gdp_gap_trillion_yen": -33.6
+    "gdp_gap_percent": -2.65,
+    "gdp_gap_trillion_yen": -14.8
   },
   "required_fiscal_spending": {
-    "amount_trillion_yen": 33.6,
+    "amount_trillion_yen": 14.8,
     "multiplier": 1.0,
     "note": "デフレギャップ解消に必要な財政支出"
   },
@@ -17,17 +17,17 @@
       },
       {
         "date": "2025-Q2",
-        "predicted_jgb_10y": 2.09,
+        "predicted_jgb_10y": 1.4,
         "type": "prediction"
       },
       {
         "date": "2025-Q3",
-        "predicted_jgb_10y": 3.36,
+        "predicted_jgb_10y": 1.96,
         "type": "prediction"
       },
       {
         "date": "2025-Q4",
-        "predicted_jgb_10y": 4.6,
+        "predicted_jgb_10y": 2.5,
         "type": "prediction"
       }
     ],
@@ -39,17 +39,17 @@
       },
       {
         "date": "2025-Q2",
-        "predicted_usdjpy": 147.5,
+        "predicted_usdjpy": 148.9,
         "type": "prediction"
       },
       {
         "date": "2025-Q3",
-        "predicted_usdjpy": 145.0,
+        "predicted_usdjpy": 147.8,
         "type": "prediction"
       },
       {
         "date": "2025-Q4",
-        "predicted_usdjpy": 142.5,
+        "predicted_usdjpy": 146.7,
         "type": "prediction"
       }
     ],
