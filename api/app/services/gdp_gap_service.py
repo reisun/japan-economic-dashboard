@@ -318,78 +318,126 @@ def _estimate_gdp_gap_maximum(
 
 
 # ---------------------------------------------------------------------------
-# 在野試算 (civilian) ハードコード系列
+# 在野試算 (civilian): 線形ピーク・トゥ・ピーク・トレンド (高橋洋一氏方式)
 # ---------------------------------------------------------------------------
 # 思想:
-#   公的機関 (内閣府/日銀) が公表する GDP ギャップは平均概念ベースで構造的に
-#   小さめに出る。一方、高橋洋一氏 (嘉悦大学) や三橋貴明氏 (経世論研究所)、
-#   藤井聡氏 (京都大学レジリエンス実践ユニット) ら在野エコノミストは、
-#   最大概念寄り・需要側強調で、より深いデフレギャップ試算を継続して公表
-#   している。本系列はこれら在野試算の代表的レンジに基づく合成値である。
+#   高橋洋一氏 (嘉悦大学) が継続的に公表している GDP ギャップ試算は、
+#   実績GDPのピーク群を上方包絡する「完全な直線」の潜在GDPを当てはめる
+#   手法を取っており、グラフ上で潜在GDPは時間に対する単調直線になる。
+#   個別論考での詳細式は明示されていないが、グラフ形状から
+#   「ピーク・トゥ・ピーク線形トレンド」(peak-to-peak linear trend) と
+#   推定できる。本実装はこのグラフ形状から推定したアルゴリズムであり、
+#   高橋氏の個別論考を直接転載したものではない。
 #
-# 数値根拠:
-#   - 2022-2024 の各四半期で、内閣府公表値 (-3.7% 〜 -2.0%) よりも 2-3.5 倍
-#     深いデフレギャップを示す。三橋氏の「需給ギャップ20兆円」(対GDP比約3.5%)、
-#     高橋氏の「30兆円超」(対GDP比約5%) や、藤井氏の積極財政論で前提とされる
-#     5-7% 程度のデフレギャップ規模感に整合させた合成系列。
-#   - 2024-Q4 ≈ -6.0% (内閣府 -2.0% の約3倍)、2022-Q1 ≈ -8.5% など。
-#   - 系列の出所が個別論考ではないため、以下は「在野試算の代表的レンジに
-#     基づく合成値; 個別の論考をもとに将来差し替え」可能。
+# アルゴリズム概要:
+#   1. ピーク包絡: 各 t について直近 K=16 クォーター (4年) の最大値を取る
+#   2. 外的ショック除外: 直近4Qピークから 5% 以上落ち込んだ点は線形回帰の
+#      対象外とする (コロナ底など)
+#   3. ピーク群に最小二乗で `peak ≈ a + b·t` を当てはめる
+#   4. 包絡条件: 切片 a を上方調整し、全期間で潜在GDP ≥ 実績GDP を保証
+#   5. ギャップ %: (Y_t - Y_pot(t)) / Y_pot(t) × 100
 #
-# 実データ差し替え点 (TODO):
-#   - 高橋洋一氏 現代ビジネス連載 / 著書記載値
-#   - 三橋貴明氏 経世論研究所ブログ「新世紀のビッグブラザーへ blog」
-#   - 藤井聡氏 京都大学レジリエンス実践ユニット報告
-#   個別の論考から四半期系列を抽出して差し替える設計。
+# 出力特性:
+#   - 潜在GDPは時間に対する完全な直線
+#   - 全期間でギャップ ≤ 0 (デフレギャップのみ)
 # ---------------------------------------------------------------------------
 
-# 在野試算: 内閣府公表値より深いデフレギャップ (%, 12四半期)
-# (合成値; 高橋洋一・三橋貴明・藤井聡らの代表的試算レンジに基づく)
-_MOCK_CIVILIAN_DATA: list[dict] = [
-    {"date": "2022-Q1", "gdp_gap_percent": -8.5},
-    {"date": "2022-Q2", "gdp_gap_percent": -8.0},
-    {"date": "2022-Q3", "gdp_gap_percent": -7.5},
-    {"date": "2022-Q4", "gdp_gap_percent": -7.0},
-    {"date": "2023-Q1", "gdp_gap_percent": -6.2},
-    {"date": "2023-Q2", "gdp_gap_percent": -5.8},
-    {"date": "2023-Q3", "gdp_gap_percent": -5.5},
-    {"date": "2023-Q4", "gdp_gap_percent": -5.0},
-    {"date": "2024-Q1", "gdp_gap_percent": -5.3},
-    {"date": "2024-Q2", "gdp_gap_percent": -5.5},
-    {"date": "2024-Q3", "gdp_gap_percent": -5.8},
-    {"date": "2024-Q4", "gdp_gap_percent": -6.0},
-]
+# パラメータ定数
+_K_PEAK_WINDOW = 16  # ピーク包絡窓 (クォーター数, 4年)
+_SHOCK_DROP_THRESHOLD = 0.05  # 5% 以上の落ち込みを外的ショックとして除外
+_BUFFER_TRILLION = 0.5  # 包絡線の上方マージン (兆円)
+
+
+def _peak_to_peak_linear_trend(
+    y: np.ndarray,
+    k_window: int = _K_PEAK_WINDOW,
+    shock_drop_threshold: float = _SHOCK_DROP_THRESHOLD,
+    buffer: float = _BUFFER_TRILLION,
+) -> tuple[np.ndarray, float, float]:
+    """高橋洋一氏方式に基づくピーク・トゥ・ピーク線形トレンド推計。
+
+    Parameters
+    ----------
+    y : 実績GDP系列 (1-D, 兆円単位想定)
+    k_window : ピーク包絡窓 (クォーター数)
+    shock_drop_threshold : 直近4Qピークからの相対落ち込み閾値 (これ以上で除外)
+    buffer : 包絡上方マージン (y と同単位)
+
+    Returns
+    -------
+    potential : 潜在GDP直線 (a + b*t, 全期間で y を下回らないよう上方シフト済)
+    a : 上方シフト後の切片
+    b : 線形トレンドの傾き (y と同単位/クォーター)
+    """
+    n = len(y)
+    if n < 2:
+        return y.copy(), float(y[0]) if n else 0.0, 0.0
+
+    # 1. ピーク包絡: 各 t について直近 K クォーター内の最大値
+    peak_envelope = np.empty(n)
+    for t in range(n):
+        lo = max(0, t - k_window + 1)
+        peak_envelope[t] = np.max(y[lo : t + 1])
+
+    # 2. 外的ショック除外: 直近4Qピークから shock_drop_threshold 以上の落ち込みは除外
+    include_mask = np.ones(n, dtype=bool)
+    for t in range(n):
+        lo4 = max(0, t - 3)
+        recent_peak = np.max(y[lo4 : t + 1])
+        if recent_peak > 0 and (recent_peak - y[t]) / recent_peak >= shock_drop_threshold:
+            include_mask[t] = False
+
+    # 3. ピーク群に対する最小二乗線形回帰
+    t_idx = np.arange(n, dtype=float)
+    if include_mask.sum() >= 2:
+        ts = t_idx[include_mask]
+        ps = peak_envelope[include_mask]
+    else:
+        # 全点ショック扱いになった場合は全点を使う (フォールバック)
+        ts = t_idx
+        ps = peak_envelope
+    b, a = np.polyfit(ts, ps, 1)  # slope, intercept
+
+    # 4. 包絡条件: 全期間で潜在 ≥ 実績 になるよう切片を上方調整
+    line = a + b * t_idx
+    deficit = float(np.max(y - line))
+    if deficit > 0:
+        a = a + deficit
+    a = a + buffer
+    potential = a + b * t_idx
+    return potential, float(a), float(b)
 
 
 def _estimate_gdp_gap_civilian(
     real_gdp: list[float], quarters: list[str]
 ) -> list[EstimatedGdpGapDataPoint]:
-    """在野試算 GDP ギャップ。
+    """在野試算 GDP ギャップ: 線形ピーク・トゥ・ピーク・トレンド (高橋洋一氏方式)。
 
-    `_MOCK_CIVILIAN_DATA` の gap% 値をハードコードで採用し、実績GDP・潜在GDP
-    の数値は gap から逆算した整合値を返す。期間ラベルは引数の quarters と
-    揃える (FRED 実データ時の長さ違いに耐える)。
+    実績GDPのピーク群 (直近16Q窓内の最大値、外的ショック期は除外) に
+    最小二乗で直線をフィッティングし、上方包絡シフトを掛けて潜在GDPとする。
+    高橋洋一氏のGDPギャップ試算 (典型的にコロナ前ピーク群を結ぶ直線) を
+    参考にした実装である。個別論考の数式そのものではなく、公開グラフの
+    形状から推定した手法を再現している。
     """
     n = len(real_gdp)
-    civ = list(_MOCK_CIVILIAN_DATA)
-    if len(civ) > n:
-        civ = civ[-n:]
-    elif len(civ) < n:
-        # 末尾値で前方延長
-        civ = [civ[0]] * (n - len(civ)) + civ
+    if n == 0:
+        return []
+    y = np.array(real_gdp, dtype=float)
+
+    potential, _a, _b = _peak_to_peak_linear_trend(y)
 
     results: list[EstimatedGdpGapDataPoint] = []
     for i, q in enumerate(quarters):
-        gap_pct = float(civ[i]["gdp_gap_percent"])
-        y = float(real_gdp[i])
-        # potential = y / (1 + gap%/100)
-        pot = y / (1.0 + gap_pct / 100.0)
+        pot = float(potential[i])
+        if not np.isfinite(pot) or pot <= 0:
+            pot = float(y[i])
+        gap_pct = round((float(y[i]) - pot) / pot * 100, 2)
         results.append(
             EstimatedGdpGapDataPoint(
                 date=q,
-                real_gdp=round(y, 1),
+                real_gdp=round(float(y[i]), 1),
                 potential_gdp=round(pot, 1),
-                gdp_gap_percent=round(gap_pct, 2),
+                gdp_gap_percent=gap_pct,
             )
         )
     return results
@@ -538,10 +586,7 @@ async def get_gdp_gap() -> GdpGapResponse:
     )
     civilian = EstimatedGdpGap(
         data=civilian_data,
-        method=(
-            "在野試算 (高橋洋一・三橋貴明・藤井聡らの代表的試算レンジに基づく合成値; "
-            "個別論考をもとに将来差し替え)"
-        ),
+        method="線形ピーク・トゥ・ピーク・トレンド (高橋洋一氏方式に基づく在野試算)",
         last_updated=today,
     )
 
