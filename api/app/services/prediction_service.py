@@ -54,6 +54,10 @@ UIP_SENSITIVITY = 2.0  # yen per percentage point
 
 PREDICTION_YEARS_AHEAD = 2
 
+# シナリオ入力の範囲（兆円）
+FISCAL_SPENDING_MIN = -200.0
+FISCAL_SPENDING_MAX = 200.0
+
 
 def _build_prediction_quarters() -> list[str]:
     today = date.today()
@@ -124,7 +128,24 @@ def _compute_is_lm_impact(
 VALID_METHODS = ("cabinet_office", "average", "maximum", "civilian")
 
 
-async def get_prediction(method: str = "maximum") -> PredictionResponse:
+def _build_spending_note(amount: float, scenario_mode: str) -> str:
+    """サマリー表示用の文言を生成する。"""
+    if scenario_mode == "user":
+        if amount > 0:
+            return f"ユーザー指定シナリオ: 拡張的財政支出 {amount:+.1f}兆円"
+        if amount < 0:
+            return f"ユーザー指定シナリオ: 財政引き締め {amount:+.1f}兆円"
+        return "ユーザー指定シナリオ: 財政中立（インパクトなし）"
+    # auto
+    if amount >= 0:
+        return "デフレギャップ解消に必要な財政支出"
+    return "インフレギャップ抑制に必要な財政引き締め"
+
+
+async def get_prediction(
+    method: str = "maximum",
+    fiscal_spending_trillion: float | None = None,
+) -> PredictionResponse:
     """Run IS-LM prediction based on current GDP gap.
 
     Parameters
@@ -132,6 +153,9 @@ async def get_prediction(method: str = "maximum") -> PredictionResponse:
     method : "cabinet_office" | "average" | "maximum" | "civilian"
         どの GDP ギャップ推計を起点にするか。デフォルトは最大概念。
         civilian = 在野試算 (高橋洋一・三橋貴明・藤井聡らの代表的試算レンジ)
+    fiscal_spending_trillion : float | None
+        ユーザー指定の財政支出シナリオ（兆円, 符号付き）。
+        指定時はこの値で IS-LM インパクトを計算し、未指定時は GDP ギャップから自動算出。
     """
 
     if method not in VALID_METHODS:
@@ -159,7 +183,15 @@ async def get_prediction(method: str = "maximum") -> PredictionResponse:
     # 需給ギャップ < 0 (デフレ): 拡張的財政支出が必要 → 正の値
     # 需給ギャップ > 0 (過熱): 引き締め的財政運営が必要 → 負の値
     # 符号付きで返し、IS-LM の金利・為替インパクトもこの符号に応じて方向付けする。
-    required_spending = -gap_trillion / FISCAL_MULTIPLIER
+    auto_required_spending = -gap_trillion / FISCAL_MULTIPLIER
+
+    # ユーザー指定があればそちらを優先（任意のシナリオ入力）
+    if fiscal_spending_trillion is not None:
+        required_spending = float(fiscal_spending_trillion)
+        scenario_mode = "user"
+    else:
+        required_spending = auto_required_spending
+        scenario_mode = "auto"
 
     # IS-LM impact
     quarters = _build_prediction_quarters()
@@ -193,10 +225,10 @@ async def get_prediction(method: str = "maximum") -> PredictionResponse:
             amount_trillion_yen=round(required_spending, 1),
             multiplier=FISCAL_MULTIPLIER,
             note=(
-                "デフレギャップ解消に必要な財政支出"
-                if required_spending >= 0
-                else "インフレギャップ抑制に必要な財政引き締め"
+                _build_spending_note(required_spending, scenario_mode)
             ),
+            scenario_mode=scenario_mode,
+            auto_amount_trillion_yen=round(auto_required_spending, 1),
         ),
         impact_prediction=ImpactPrediction(
             interest_rate=interest_predictions,

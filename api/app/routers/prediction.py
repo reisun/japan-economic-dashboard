@@ -1,9 +1,14 @@
 """Prediction (IS-LM model) router."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from app.models.schemas import PredictionResponse
-from app.services.prediction_service import VALID_METHODS, get_prediction
+from app.services.prediction_service import (
+    FISCAL_SPENDING_MAX,
+    FISCAL_SPENDING_MIN,
+    VALID_METHODS,
+    get_prediction,
+)
 
 router = APIRouter()
 
@@ -14,7 +19,30 @@ async def prediction(
         "maximum",
         description="GDPギャップ推計手法: cabinet_office | average | maximum | civilian",
     ),
+    fiscal_spending_trillion: float | None = Query(
+        None,
+        description=(
+            "任意の財政支出額（兆円）。指定時はこの値で IS-LM インパクトを計算する。"
+            "未指定時は GDP ギャップから自動算出。"
+            f"範囲: {FISCAL_SPENDING_MIN}〜{FISCAL_SPENDING_MAX}"
+        ),
+    ),
 ):
     if method not in VALID_METHODS:
         method = "maximum"
-    return await get_prediction(method=method)
+    if fiscal_spending_trillion is not None:
+        if (
+            fiscal_spending_trillion < FISCAL_SPENDING_MIN
+            or fiscal_spending_trillion > FISCAL_SPENDING_MAX
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "fiscal_spending_trillion は "
+                    f"{FISCAL_SPENDING_MIN}〜{FISCAL_SPENDING_MAX} の範囲で指定してください"
+                ),
+            )
+    return await get_prediction(
+        method=method,
+        fiscal_spending_trillion=fiscal_spending_trillion,
+    )
