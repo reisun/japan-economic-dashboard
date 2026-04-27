@@ -8,7 +8,8 @@ import type { GdpGapResponse, InflationResponse } from "../types/api";
  * ギャップを目的関数として運用する。直近値で4象限のどこに位置するかを示す。
  *
  * - 横軸: GDPギャップ（最大概念, %）
- * - 縦軸: CPIコア（前年同月比%）— 日銀目標 2% を閾値とする
+ * - 縦軸: CPIコアコア（生鮮食品・エネルギー除く, 前年同月比%）— 日銀目標 2% を閾値とする
+ *         世界標準 core CPI と同じ概念で、基調インフレを判定する
  *
  * 各象限の推奨スタンス:
  *   ギャップ負 × インフレ低 → 拡張的財政の余地大
@@ -112,12 +113,12 @@ export function PolicyMatrix() {
   const gdpData = gdpState.data;
   const inflData = inflState.data;
 
-  // 直近値: 最大概念ギャップ（生産関数ベース）と CPIコア
+  // 直近値: 最大概念ギャップ（生産関数ベース）と CPIコアコア
   const lastGap =
     gdpData.estimated_maximum.data[gdpData.estimated_maximum.data.length - 1];
   const lastInfl = inflData.data[inflData.data.length - 1];
   const gapPct = lastGap?.gdp_gap_percent ?? 0;
-  const cpi = lastInfl?.cpi_core ?? 0;
+  const cpi = lastInfl?.cpi_core_core ?? 0;
   const threshold = inflData.boj_target;
 
   const active = classifyQuadrant(gapPct, cpi, threshold);
@@ -133,7 +134,7 @@ export function PolicyMatrix() {
           </span>
         </div>
         <div>
-          <span className="text-gray-500">直近 CPIコア: </span>
+          <span className="text-gray-500">直近 CPIコアコア: </span>
           <span className="font-semibold">
             {cpi >= 0 ? "+" : ""}
             {cpi.toFixed(2)}%

@@ -431,22 +431,23 @@ def generate_prediction(method="maximum"):
 # ---------------------------------------------------------------------------
 # Inflation data
 # ---------------------------------------------------------------------------
-# CPIコア / GDPデフレータ / 名目賃金（前年同期比%）。
-# 実データ差し替え点: 総務省CPI、内閣府GDPデフレータ、厚労省毎月勤労統計。
+# CPIコアコア（生鮮食品・エネルギー除く= 世界標準 core CPI） / GDPデフレータ /
+# 名目賃金（前年同期比%）。
+# 実データ差し替え点: 総務省CPI（コアコア）、内閣府GDPデフレータ、厚労省毎月勤労統計。
 
 MOCK_INFLATION = [
-    {"date": "2022-Q1", "cpi_core": 0.6, "gdp_deflator": 0.4, "wage_growth": 0.6},
-    {"date": "2022-Q2", "cpi_core": 1.6, "gdp_deflator": 0.5, "wage_growth": 1.3},
-    {"date": "2022-Q3", "cpi_core": 2.5, "gdp_deflator": 0.6, "wage_growth": 1.6},
-    {"date": "2022-Q4", "cpi_core": 3.7, "gdp_deflator": 1.2, "wage_growth": 1.9},
-    {"date": "2023-Q1", "cpi_core": 3.5, "gdp_deflator": 2.0, "wage_growth": 1.4},
-    {"date": "2023-Q2", "cpi_core": 3.3, "gdp_deflator": 3.6, "wage_growth": 1.4},
-    {"date": "2023-Q3", "cpi_core": 2.9, "gdp_deflator": 5.1, "wage_growth": 1.0},
-    {"date": "2023-Q4", "cpi_core": 2.5, "gdp_deflator": 3.9, "wage_growth": 1.2},
-    {"date": "2024-Q1", "cpi_core": 2.6, "gdp_deflator": 3.4, "wage_growth": 2.0},
-    {"date": "2024-Q2", "cpi_core": 2.6, "gdp_deflator": 3.2, "wage_growth": 4.5},
-    {"date": "2024-Q3", "cpi_core": 2.4, "gdp_deflator": 2.4, "wage_growth": 2.8},
-    {"date": "2024-Q4", "cpi_core": 2.7, "gdp_deflator": 2.0, "wage_growth": 3.1},
+    {"date": "2022-Q1", "cpi_core_core": 0.6, "gdp_deflator": 0.4, "wage_growth": 0.6},
+    {"date": "2022-Q2", "cpi_core_core": 1.6, "gdp_deflator": 0.5, "wage_growth": 1.3},
+    {"date": "2022-Q3", "cpi_core_core": 2.0, "gdp_deflator": 0.6, "wage_growth": 1.6},
+    {"date": "2022-Q4", "cpi_core_core": 2.4, "gdp_deflator": 1.2, "wage_growth": 1.9},
+    {"date": "2023-Q1", "cpi_core_core": 2.6, "gdp_deflator": 2.0, "wage_growth": 1.4},
+    {"date": "2023-Q2", "cpi_core_core": 2.5, "gdp_deflator": 3.6, "wage_growth": 1.4},
+    {"date": "2023-Q3", "cpi_core_core": 2.4, "gdp_deflator": 5.1, "wage_growth": 1.0},
+    {"date": "2023-Q4", "cpi_core_core": 2.3, "gdp_deflator": 3.9, "wage_growth": 1.2},
+    {"date": "2024-Q1", "cpi_core_core": 2.4, "gdp_deflator": 3.4, "wage_growth": 2.0},
+    {"date": "2024-Q2", "cpi_core_core": 2.4, "gdp_deflator": 3.2, "wage_growth": 4.5},
+    {"date": "2024-Q3", "cpi_core_core": 2.3, "gdp_deflator": 2.4, "wage_growth": 2.8},
+    {"date": "2024-Q4", "cpi_core_core": 2.2, "gdp_deflator": 2.0, "wage_growth": 3.1},
 ]
 
 
@@ -454,7 +455,7 @@ def generate_inflation():
     today = "2026-04-27"
     return {
         "data": MOCK_INFLATION,
-        "source": "総務省CPI / 内閣府GDPデフレータ / 厚労省毎月勤労統計（モック）",
+        "source": "総務省CPI（コアコア） / 内閣府GDPデフレータ / 厚労省毎月勤労統計（モック）",
         "boj_target": 2.0,
         "last_updated": today,
     }
