@@ -121,6 +121,21 @@ export interface PredictionResponse {
   };
 }
 
+// Inflation types
+export interface InflationDataPoint {
+  date: string;
+  cpi_core: number | null;
+  gdp_deflator: number | null;
+  wage_growth: number | null;
+}
+
+export interface InflationResponse {
+  data: InflationDataPoint[];
+  source: string;
+  boj_target: number;
+  last_updated: string;
+}
+
 // Common types
 export interface ApiState<T> {
   data: T | null;
