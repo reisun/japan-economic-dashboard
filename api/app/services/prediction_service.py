@@ -13,6 +13,7 @@ All parameters are defined as constants for easy future adjustment.
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 from app.models.schemas import (
     Assumptions,
@@ -51,10 +52,23 @@ BASELINE_USDJPY = 150.0
 # (simplified: higher domestic rates → stronger yen)
 UIP_SENSITIVITY = 2.0  # yen per percentage point
 
-# Quarters for prediction (3 years = 12 quarters)
-PREDICTION_QUARTERS = [
-    f"{y}-Q{q}" for y in range(2025, 2028) for q in range(1, 5)
-]
+PREDICTION_YEARS_AHEAD = 2
+
+
+def _build_prediction_quarters() -> list[str]:
+    today = date.today()
+    current_q = (today.month - 1) // 3 + 1
+    current_y = today.year
+    total = PREDICTION_YEARS_AHEAD * 4 + 1  # current quarter + 8 ahead
+    quarters: list[str] = []
+    y, q = current_y, current_q
+    for _ in range(total):
+        quarters.append(f"{y}-Q{q}")
+        q += 1
+        if q > 4:
+            q = 1
+            y += 1
+    return quarters
 
 
 # ---------------------------------------------------------------------------
@@ -64,18 +78,13 @@ PREDICTION_QUARTERS = [
 
 def _compute_is_lm_impact(
     fiscal_spending_trillion: float,
+    n_quarters: int,
 ) -> tuple[list[float], list[float]]:
     """Compute predicted interest rates and exchange rates per quarter.
 
-    Simplified IS-LM:
-      - Fiscal expansion dG shifts IS right → both Y and r increase
-      - dr = (dG * FISCAL_MULTIPLIER * MONEY_DEMAND_ELASTICITY)
-             / (INVESTMENT_SENSITIVITY + MONEY_DEMAND_ELASTICITY) / NOMINAL_GDP * 100
-      - Spread over 12 quarters with gradual phase-in
-
     Returns (jgb_10y_list, usdjpy_list) for each quarter.
     """
-    n = len(PREDICTION_QUARTERS)
+    n = n_quarters
 
     # Total interest rate impact from fiscal expansion (percentage points)
     total_dr = (
@@ -130,7 +139,8 @@ async def get_prediction() -> PredictionResponse:
     required_spending = abs(gap_trillion) / FISCAL_MULTIPLIER
 
     # IS-LM impact
-    jgb_rates, usdjpy_rates = _compute_is_lm_impact(required_spending)
+    quarters = _build_prediction_quarters()
+    jgb_rates, usdjpy_rates = _compute_is_lm_impact(required_spending, len(quarters))
 
     # Build prediction arrays
     interest_predictions = [
@@ -139,7 +149,7 @@ async def get_prediction() -> PredictionResponse:
             predicted_jgb_10y=r,
             type="actual" if i == 0 else "prediction",
         )
-        for i, (q, r) in enumerate(zip(PREDICTION_QUARTERS, jgb_rates))
+        for i, (q, r) in enumerate(zip(quarters, jgb_rates))
     ]
 
     exchange_predictions = [
@@ -148,7 +158,7 @@ async def get_prediction() -> PredictionResponse:
             predicted_usdjpy=fx,
             type="actual" if i == 0 else "prediction",
         )
-        for i, (q, fx) in enumerate(zip(PREDICTION_QUARTERS, usdjpy_rates))
+        for i, (q, fx) in enumerate(zip(quarters, usdjpy_rates))
     ]
 
     return PredictionResponse(
