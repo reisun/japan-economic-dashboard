@@ -631,9 +631,417 @@ def generate_prediction(method="maximum"):
             "interest_rate": interest_predictions,
             "exchange_rate": exchange_predictions,
             "model": "IS-LM",
+            "engine": "is_lm",
             "assumptions": {
                 "money_demand_elasticity": MONEY_DEMAND_ELASTICITY,
                 "investment_sensitivity": INVESTMENT_SENSITIVITY,
+                "fiscal_multiplier": FISCAL_MULTIPLIER,
+            },
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# 統計モデル予測 (VAR(1) / AR(1)) — pure-Python 版
+# ---------------------------------------------------------------------------
+# 静的JSON用に numpy なしで OLS-VAR(1) と AR(1) を実装する。
+# 内生変数: GDPギャップ, JGB10y, USDJPY, CPIコアコア（4変数四半期パネル）
+# 入力データはこのスクリプト内の MOCK_REAL_GDP / MOCK_INFLATION / generate_rates から
+# 共通期間で取得した近似値を使う。
+
+VAR_NOMINAL_GDP = 560.0
+VAR_PREDICTION_STEPS = 8
+VARIABLE_NAMES_STATIC = ["gdp_gap", "jgb_10y", "usdjpy", "cpi_core_core"]
+
+
+def _matmul(A, B):
+    n = len(A)
+    m = len(B[0]) if B and B[0] else 0
+    p = len(B)
+    out = [[0.0] * m for _ in range(n)]
+    for i in range(n):
+        for k in range(p):
+            aik = A[i][k]
+            for j in range(m):
+                out[i][j] += aik * B[k][j]
+    return out
+
+
+def _matvec(A, x):
+    return [sum(A[i][j] * x[j] for j in range(len(x))) for i in range(len(A))]
+
+
+def _transpose(A):
+    return [list(col) for col in zip(*A)]
+
+
+def _eye(n, scale=1.0):
+    return [[scale if i == j else 0.0 for j in range(n)] for i in range(n)]
+
+
+def _solve_matrix(A, B):
+    """Solve A X = B  (B can be list-of-rows). 多列右辺対応。"""
+    n = len(B)
+    m = len(B[0])
+    # Augment
+    M = [list(A[i]) + list(B[i]) for i in range(n)]
+    for col in range(n):
+        max_row = col
+        for r in range(col + 1, n):
+            if abs(M[r][col]) > abs(M[max_row][col]):
+                max_row = r
+        M[col], M[max_row] = M[max_row], M[col]
+        pivot = M[col][col]
+        if abs(pivot) < 1e-12:
+            continue
+        for r in range(col + 1, n):
+            factor = M[r][col] / pivot
+            for j in range(col, n + m):
+                M[r][j] -= factor * M[col][j]
+    X = [[0.0] * m for _ in range(n)]
+    for i in range(n - 1, -1, -1):
+        for j in range(m):
+            s = M[i][n + j]
+            for k in range(i + 1, n):
+                s -= M[i][k] * X[k][j]
+            if abs(M[i][i]) > 1e-12:
+                X[i][j] = s / M[i][i]
+    return X
+
+
+def _fit_var1(Y):
+    """Y: list of (k,) rows. Returns (c (k,), A (k,k))."""
+    T = len(Y)
+    k = len(Y[0])
+    if T < 3:
+        return [0.0] * k, _eye(k, 0.0)
+    # X[(T-1) x (k+1)] = [1, Y_{t-1}], target Yt[t] = Y_{t}
+    X = [[1.0] + list(Y[t - 1]) for t in range(1, T)]
+    Yt = [list(Y[t]) for t in range(1, T)]
+    Xt = _transpose(X)
+    XtX = _matmul(Xt, X)
+    # 微小リッジ
+    for i in range(len(XtX)):
+        XtX[i][i] += 1e-8
+    XtY = _matmul(Xt, Yt)
+    B = _solve_matrix(XtX, XtY)  # (k+1, k)
+    c = list(B[0])
+    A = [[B[1 + i][j] for i in range(k)] for j in range(k)]  # 転置: A[j][i] = coef of var i in eq j
+    # 安定化: 最大固有値推定が困難なので、行ごと最大絶対値で大雑把に縮小
+    # max_abs_row = max(sum(|A[i][j]|) for i)
+    row_norm = max(sum(abs(v) for v in row) for row in A)
+    if row_norm > 0.85:
+        s = 0.85 / row_norm
+        for i in range(k):
+            for j in range(k):
+                A[i][j] *= s
+        # 長期均衡を保つよう c も再計算: y* = (I - A_orig)^-1 c_orig をまず近似
+        # 簡略: データ平均を均衡にする
+        mean_y = [sum(row[j] for row in Y) / T for j in range(k)]
+        I_minus_As = [[(1.0 if i == j else 0.0) - A[i][j] for j in range(k)] for i in range(k)]
+        c = _matvec(I_minus_As, mean_y)
+    return c, A
+
+
+def _forecast_var1(y_last, c, A, n_steps):
+    out = []
+    cur = list(y_last)
+    for _ in range(n_steps):
+        nxt = [c[i] + sum(A[i][j] * cur[j] for j in range(len(cur))) for i in range(len(c))]
+        out.append(nxt)
+        cur = nxt
+    return out
+
+
+def _irf_var1(A, n_steps, shock_vec):
+    out = [list(shock_vec)]
+    cur = list(shock_vec)
+    for _ in range(n_steps):
+        nxt = [sum(A[i][j] * cur[j] for j in range(len(cur))) for i in range(len(cur))]
+        out.append(nxt)
+        cur = nxt
+    return out
+
+
+def _fit_ar1_static(y):
+    n = len(y)
+    if n < 3:
+        return float(y[-1] if y else 0.0), 0.0
+    # OLS: y_t = c + phi y_{t-1}
+    sx = sum(y[:-1])
+    sy = sum(y[1:])
+    sxx = sum(v * v for v in y[:-1])
+    sxy = sum(y[t - 1] * y[t] for t in range(1, n))
+    m = n - 1
+    denom = m * sxx - sx * sx
+    if abs(denom) < 1e-12:
+        return float(y[-1]), 0.0
+    phi = (m * sxy - sx * sy) / denom
+    if not (phi == phi):  # NaN guard
+        phi = 0.0
+    if abs(phi) >= 0.95:
+        phi = 0.95 if phi > 0 else -0.95
+    mean_y = sum(y) / n
+    c = (1.0 - phi) * mean_y
+    return c, phi
+
+
+def _forecast_ar1_static(y0, c, phi, n_steps):
+    out = []
+    cur = float(y0)
+    for _ in range(n_steps):
+        cur = c + phi * cur
+        out.append(cur)
+    return out
+
+
+def _build_panel_static(method):
+    """4変数（GDPギャップ/JGB/USDJPY/CPI）の四半期パネルを組み立てる。
+
+    - GDPギャップ: method 別の generate_gdp_gap 系列を流用
+    - JGB10y: generate_rates の boj 系列を四半期平均
+    - USDJPY: generate_rates の fred 為替を四半期平均
+    - CPIコアコア: MOCK_INFLATION
+    """
+    gdp = generate_gdp_gap()
+    if method == "cabinet_office":
+        gdp_data = gdp["cabinet_office"]["data"]
+    elif method == "average":
+        gdp_data = gdp["estimated_average"]["data"]
+    elif method == "civilian":
+        gdp_data = gdp["estimated_civilian"]["data"]
+    else:
+        gdp_data = gdp["estimated_maximum"]["data"]
+    gdp_q = {p["date"]: float(p["gdp_gap_percent"]) for p in gdp_data}
+
+    rates = generate_rates()
+
+    def _to_q(label):
+        m = re.match(r"^(\d{4})-(\d{2})", label)
+        if not m:
+            return None
+        y, mo = int(m.group(1)), int(m.group(2))
+        return f"{y}-Q{(mo - 1) // 3 + 1}"
+
+    def _agg(points, key):
+        bucket = {}
+        for p in points:
+            q = _to_q(p["date"])
+            if q is None or p.get(key) is None:
+                continue
+            bucket.setdefault(q, []).append(float(p[key]))
+        return {q: sum(vs) / len(vs) for q, vs in bucket.items() if vs}
+
+    jgb_q = _agg(rates["interest_rates"]["boj"], "jgb_10y_yield")
+    fx_q = _agg(rates["exchange_rates"]["fred"], "usdjpy")
+    cpi_q = {p["date"]: float(p["cpi_core_core"]) for p in MOCK_INFLATION if p.get("cpi_core_core") is not None}
+
+    common = sorted(
+        set(gdp_q) & set(jgb_q) & set(fx_q) & set(cpi_q),
+        key=lambda x: (int(x.split("-Q")[0]), int(x.split("-Q")[1])),
+    )
+    # 共通範囲が短い場合は ffill / bfill で揃える
+    if len(common) < 6:
+        all_q = sorted(
+            set(gdp_q) | set(jgb_q) | set(fx_q) | set(cpi_q),
+            key=lambda x: (int(x.split("-Q")[0]), int(x.split("-Q")[1])),
+        )
+
+        def fill(d):
+            out = {}
+            last = None
+            for q in all_q:
+                if q in d:
+                    last = d[q]
+                if last is not None:
+                    out[q] = last
+            last = None
+            for q in reversed(all_q):
+                if q in d and last is None:
+                    last = d[q]
+                if q not in out and last is not None:
+                    out[q] = last
+            return out
+
+        gdp_q = fill(gdp_q)
+        jgb_q = fill(jgb_q)
+        fx_q = fill(fx_q)
+        cpi_q = fill(cpi_q)
+        common = [q for q in all_q if q in gdp_q and q in jgb_q and q in fx_q and q in cpi_q]
+
+    Y = [[gdp_q[q], jgb_q[q], fx_q[q], cpi_q[q]] for q in common]
+    return common, Y
+
+
+def _next_quarter(qlabel):
+    y, q = qlabel.split("-Q")
+    y, q = int(y), int(q)
+    q += 1
+    if q > 4:
+        q = 1
+        y += 1
+    return f"{y}-Q{q}"
+
+
+def _build_future_quarters(last_q, n):
+    out = []
+    cur = last_q
+    for _ in range(n):
+        cur = _next_quarter(cur)
+        out.append(cur)
+    return out
+
+
+def _build_spending_note(amount, mode):
+    if mode == "user":
+        if amount > 0:
+            return f"ユーザー指定シナリオ: 拡張的財政支出 {amount:+.1f}兆円"
+        if amount < 0:
+            return f"ユーザー指定シナリオ: 財政引き締め {amount:+.1f}兆円"
+        return "ユーザー指定シナリオ: 財政中立"
+    return (
+        "デフレギャップ解消に必要な財政支出"
+        if amount >= 0
+        else "インフレギャップ抑制に必要な財政引き締め"
+    )
+
+
+def generate_prediction_var(method="maximum"):
+    quarters, Y = _build_panel_static(method)
+    if not Y:
+        return generate_prediction(method)
+    T = len(Y)
+    c, A = _fit_var1(Y)
+
+    last_obs = Y[-1]
+    gap_pct = last_obs[0]
+    gap_trillion = round(gap_pct / 100.0 * VAR_NOMINAL_GDP, 1)
+    required_spending = -gap_trillion / FISCAL_MULTIPLIER
+
+    # 財政ショック → GDPギャップショック
+    shock_gap_pct = required_spending / VAR_NOMINAL_GDP * 100.0 * FISCAL_MULTIPLIER
+    shock_vec = [shock_gap_pct, 0.0, 0.0, 0.0]
+
+    base_fc = _forecast_var1(last_obs, c, A, VAR_PREDICTION_STEPS)
+    shock_resp = _irf_var1(A, VAR_PREDICTION_STEPS - 1, shock_vec)
+    fc = [
+        [base_fc[i][j] + shock_resp[i][j] for j in range(4)]
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+
+    future_q = _build_future_quarters(quarters[-1], VAR_PREDICTION_STEPS)
+    interest_predictions = [
+        {"date": quarters[-1], "predicted_jgb_10y": round(last_obs[1], 2), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_jgb_10y": round(fc[i][1], 2), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+    exchange_predictions = [
+        {"date": quarters[-1], "predicted_usdjpy": round(last_obs[2], 1), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_usdjpy": round(fc[i][2], 1), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+
+    # 単位ショック (+1兆円相当) IRF
+    unit_shock = [1.0 / VAR_NOMINAL_GDP * 100.0, 0.0, 0.0, 0.0]
+    irf = _irf_var1(A, VAR_PREDICTION_STEPS, unit_shock)
+    irf_points = [
+        {
+            "horizon": h,
+            "gdp_gap": round(irf[h][0], 4),
+            "jgb_10y": round(irf[h][1], 4),
+            "usdjpy": round(irf[h][2], 3),
+            "cpi_core_core": round(irf[h][3], 4),
+        }
+        for h in range(VAR_PREDICTION_STEPS + 1)
+    ]
+
+    return {
+        "current_gap": {
+            "gdp_gap_percent": round(gap_pct, 2),
+            "gdp_gap_trillion_yen": gap_trillion,
+        },
+        "required_fiscal_spending": {
+            "amount_trillion_yen": round(required_spending, 1),
+            "multiplier": FISCAL_MULTIPLIER,
+            "note": _build_spending_note(required_spending, "auto"),
+            "scenario_mode": "auto",
+            "auto_amount_trillion_yen": round(required_spending, 1),
+        },
+        "impact_prediction": {
+            "interest_rate": interest_predictions,
+            "exchange_rate": exchange_predictions,
+            "model": "VAR(1)",
+            "engine": "var",
+            "assumptions": {
+                "lag_order": 1,
+                "n_obs": T,
+                "n_steps": VAR_PREDICTION_STEPS,
+                "variables": VARIABLE_NAMES_STATIC,
+                "fiscal_multiplier": FISCAL_MULTIPLIER,
+            },
+            "irf": irf_points,
+        },
+    }
+
+
+def generate_prediction_ar1(method="maximum"):
+    quarters, Y = _build_panel_static(method)
+    if not Y:
+        return generate_prediction(method)
+    T = len(Y)
+    last_obs = Y[-1]
+    gap_pct = last_obs[0]
+    gap_trillion = round(gap_pct / 100.0 * VAR_NOMINAL_GDP, 1)
+    required_spending = -gap_trillion / FISCAL_MULTIPLIER
+
+    shock_gap_pct = required_spending / VAR_NOMINAL_GDP * 100.0 * FISCAL_MULTIPLIER
+    last_shocked = list(last_obs)
+    last_shocked[0] = last_obs[0] + shock_gap_pct
+
+    fc = []
+    for j in range(4):
+        col = [Y[t][j] for t in range(T)]
+        c, phi = _fit_ar1_static(col)
+        fc.append(_forecast_ar1_static(last_shocked[j], c, phi, VAR_PREDICTION_STEPS))
+
+    future_q = _build_future_quarters(quarters[-1], VAR_PREDICTION_STEPS)
+    interest_predictions = [
+        {"date": quarters[-1], "predicted_jgb_10y": round(last_obs[1], 2), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_jgb_10y": round(fc[1][i], 2), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+    exchange_predictions = [
+        {"date": quarters[-1], "predicted_usdjpy": round(last_obs[2], 1), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_usdjpy": round(fc[2][i], 1), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+
+    return {
+        "current_gap": {
+            "gdp_gap_percent": round(gap_pct, 2),
+            "gdp_gap_trillion_yen": gap_trillion,
+        },
+        "required_fiscal_spending": {
+            "amount_trillion_yen": round(required_spending, 1),
+            "multiplier": FISCAL_MULTIPLIER,
+            "note": _build_spending_note(required_spending, "auto"),
+            "scenario_mode": "auto",
+            "auto_amount_trillion_yen": round(required_spending, 1),
+        },
+        "impact_prediction": {
+            "interest_rate": interest_predictions,
+            "exchange_rate": exchange_predictions,
+            "model": "AR(1)",
+            "engine": "ar1",
+            "assumptions": {
+                "lag_order": 1,
+                "n_obs": T,
+                "n_steps": VAR_PREDICTION_STEPS,
+                "variables": VARIABLE_NAMES_STATIC,
                 "fiscal_multiplier": FISCAL_MULTIPLIER,
             },
         },
@@ -794,6 +1202,12 @@ def main():
         "prediction-civilian.json": generate_prediction("civilian"),
         "inflation.json": inflation,
     }
+    # 統計モデル（VAR / AR(1)）の事前計算 JSON
+    for m in ("maximum", "average", "cabinet_office", "civilian"):
+        files[f"prediction-{m}-var.json"] = generate_prediction_var(m)
+        files[f"prediction-{m}-ar1.json"] = generate_prediction_ar1(m)
+        # IS-LM も engine 明示版を追加（フロントの統一読み込みに対応）
+        files[f"prediction-{m}-is_lm.json"] = generate_prediction(m)
 
     for output_dir in OUTPUT_DIRS:
         os.makedirs(output_dir, exist_ok=True)

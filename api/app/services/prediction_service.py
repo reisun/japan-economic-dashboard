@@ -145,19 +145,26 @@ def _build_spending_note(amount: float, scenario_mode: str) -> str:
 async def get_prediction(
     method: str = "maximum",
     fiscal_spending_trillion: float | None = None,
+    engine: str = "is_lm",
 ) -> PredictionResponse:
-    """Run IS-LM prediction based on current GDP gap.
+    """予測モデル切替対応のディスパッチャ。
 
-    Parameters
-    ----------
-    method : "cabinet_office" | "average" | "maximum" | "civilian"
-        どの GDP ギャップ推計を起点にするか。デフォルトは最大概念。
-        civilian = 在野試算 (高橋洋一・三橋貴明・藤井聡らの代表的試算レンジ)
-    fiscal_spending_trillion : float | None
-        ユーザー指定の財政支出シナリオ（兆円, 符号付き）。
-        指定時はこの値で IS-LM インパクトを計算し、未指定時は GDP ギャップから自動算出。
+    engine = "is_lm" (デフォルト, 構造モデル) / "var" / "ar1" を選択可能。
     """
+    if engine == "var":
+        from app.services.var_service import get_var_prediction
 
+        return await get_var_prediction(
+            method=method, fiscal_spending_trillion=fiscal_spending_trillion
+        )
+    if engine == "ar1":
+        from app.services.var_service import get_ar1_prediction
+
+        return await get_ar1_prediction(
+            method=method, fiscal_spending_trillion=fiscal_spending_trillion
+        )
+
+    # IS-LM (デフォルト)
     if method not in VALID_METHODS:
         method = "maximum"
 
@@ -233,6 +240,8 @@ async def get_prediction(
         impact_prediction=ImpactPrediction(
             interest_rate=interest_predictions,
             exchange_rate=exchange_predictions,
+            model="IS-LM",
+            engine="is_lm",
             assumptions=Assumptions(
                 money_demand_elasticity=MONEY_DEMAND_ELASTICITY,
                 investment_sensitivity=INVESTMENT_SENSITIVITY,

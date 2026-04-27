@@ -10,7 +10,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { STATIC_MODE, useApi } from "../hooks/useApi";
-import type { GdpGapMethod, PredictionResponse } from "../types/api";
+import type {
+  GdpGapMethod,
+  PredictionEngine,
+  PredictionResponse,
+} from "../types/api";
 
 interface RateChartPoint {
   date: string;
@@ -31,6 +35,18 @@ const METHOD_LABEL: Record<GdpGapMethod, string> = {
   civilian: "在野試算",
 };
 
+const ENGINE_LABEL: Record<PredictionEngine, string> = {
+  is_lm: "IS-LM（構造モデル）",
+  var: "VAR（統計モデル）",
+  ar1: "AR(1)（ベンチマーク）",
+};
+
+const ENGINE_DESCRIPTION: Record<PredictionEngine, string> = {
+  is_lm: "マクロ経済理論に基づく構造モデル。財政乗数・流動性選好・UIPの理論式から金利・為替への波及を計算します。",
+  var: "Vector Autoregression: 過去データから多変量の動学を推定する統計モデル。実データに観察された関係性を反映します。",
+  ar1: "AR(1): 各変数を前期値だけで個別に予測するベンチマーク。最も単純なため、他モデルの精度比較の基準になります。",
+};
+
 // シナリオ入力の範囲（API 側と揃える）
 const SCENARIO_MIN = -200;
 const SCENARIO_MAX = 200;
@@ -40,15 +56,23 @@ const DEBOUNCE_MS = 500;
 function buildPredictionPath(
   method: GdpGapMethod,
   scenario: number | null,
+  engine: PredictionEngine,
 ): string {
   if (STATIC_MODE) {
-    // 静的モードではシナリオ入力に対応できないため固定 JSON を返す
-    return `/prediction-${method}.json`;
+    // 静的モード: prediction-<method>-<engine>.json を返す（IS-LM は後方互換のため
+    // engine 指定なしのファイル名にもフォールバック）
+    if (engine === "is_lm") {
+      return `/prediction-${method}.json`;
+    }
+    return `/prediction-${method}-${engine}.json`;
   }
-  if (scenario === null || Number.isNaN(scenario)) {
-    return `/prediction?method=${method}`;
+  const params = new URLSearchParams();
+  params.set("method", method);
+  params.set("engine", engine);
+  if (scenario !== null && !Number.isNaN(scenario)) {
+    params.set("fiscal_spending_trillion", String(scenario));
   }
-  return `/prediction?method=${method}&fiscal_spending_trillion=${scenario}`;
+  return `/prediction?${params.toString()}`;
 }
 
 function splitRateData(data: PredictionResponse): RateChartPoint[] {
@@ -74,6 +98,7 @@ function clampScenario(v: number): number {
 
 export function PredictionChart() {
   const [method, setMethod] = useState<GdpGapMethod>("maximum");
+  const [engine, setEngine] = useState<PredictionEngine>("is_lm");
 
   // シナリオ入力（ユーザー操作中のローカル値, null=自動）
   const [scenarioInput, setScenarioInput] = useState<number | null>(null);
@@ -98,14 +123,14 @@ export function PredictionChart() {
     };
   }, [scenarioInput]);
 
-  // method 切替時はシナリオを自動に戻す
+  // method / engine 切替時はシナリオを自動に戻す
   useEffect(() => {
     setScenarioInput(null);
     setScenarioText("");
     setDebouncedScenario(null);
-  }, [method]);
+  }, [method, engine]);
 
-  const path = buildPredictionPath(method, debouncedScenario);
+  const path = buildPredictionPath(method, debouncedScenario, engine);
   const { data, loading, error } = useApi<PredictionResponse>(path);
 
   const tabs: { key: GdpGapMethod; label: string }[] = [
@@ -131,6 +156,48 @@ export function PredictionChart() {
           {t.label}
         </button>
       ))}
+    </div>
+  );
+
+  const engineOptions: { key: PredictionEngine; label: string }[] = [
+    { key: "is_lm", label: ENGINE_LABEL.is_lm },
+    { key: "var", label: ENGINE_LABEL.var },
+    { key: "ar1", label: ENGINE_LABEL.ar1 },
+  ];
+
+  const renderEngineSelector = () => (
+    <div className="bg-indigo-50 border border-indigo-200 rounded p-3 mb-3">
+      <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
+        <h3 className="text-sm font-medium text-indigo-900">予測モデル</h3>
+        <span className="text-xs text-indigo-700">
+          {data?.impact_prediction.model
+            ? `現在: ${data.impact_prediction.model}`
+            : ""}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2 mb-2">
+        {engineOptions.map((o) => (
+          <button
+            key={o.key}
+            onClick={() => setEngine(o.key)}
+            className={
+              "px-3 py-1 text-xs font-medium rounded border transition-colors " +
+              (engine === o.key
+                ? "border-indigo-600 bg-indigo-600 text-white"
+                : "border-indigo-300 bg-white text-indigo-800 hover:bg-indigo-100")
+            }
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-indigo-800/80">
+        {ENGINE_DESCRIPTION[engine]}
+      </p>
+      <p className="text-xs text-indigo-700/70 mt-1">
+        IS-LM はマクロ経済理論に基づく構造モデル。VAR は過去データから推定した統計モデル。
+        両者の差異が経済予測の不確実性を示します。
+      </p>
     </div>
   );
 
@@ -250,7 +317,8 @@ export function PredictionChart() {
   if (loading && !data) {
     return (
       <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold mb-4">予測（IS-LMモデル）</h2>
+        <h2 className="text-lg font-semibold mb-4">予測モデル</h2>
+        {renderEngineSelector()}
         {renderTabs()}
         <div className="h-64 flex items-center justify-center text-gray-400">
           読み込み中...
@@ -262,7 +330,8 @@ export function PredictionChart() {
   if (error || !data) {
     return (
       <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-semibold mb-4">予測（IS-LMモデル）</h2>
+        <h2 className="text-lg font-semibold mb-4">予測モデル</h2>
+        {renderEngineSelector()}
         {renderTabs()}
         <div className="h-64 flex items-center justify-center text-red-500">
           {error || "データの取得に失敗しました"}
@@ -276,12 +345,22 @@ export function PredictionChart() {
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-lg font-semibold mb-1">予測（IS-LMモデル）</h2>
+      <h2 className="text-lg font-semibold mb-1">予測モデル</h2>
       <p className="text-xs text-gray-500 mb-3">
         ギャップ起点: {METHOD_LABEL[method]} / モデル:{" "}
-        {data.impact_prediction.model} / 乗数:{" "}
-        {data.impact_prediction.assumptions.fiscal_multiplier}
+        {data.impact_prediction.model}
+        {data.impact_prediction.assumptions.fiscal_multiplier != null && (
+          <> / 乗数: {data.impact_prediction.assumptions.fiscal_multiplier}</>
+        )}
+        {data.impact_prediction.assumptions.lag_order != null && (
+          <>
+            {" "}
+            / ラグ: {data.impact_prediction.assumptions.lag_order} / 観測数:{" "}
+            {data.impact_prediction.assumptions.n_obs ?? "-"}
+          </>
+        )}
       </p>
+      {renderEngineSelector()}
       {renderTabs()}
 
       {/* Summary cards */}
@@ -391,6 +470,50 @@ export function PredictionChart() {
           </LineChart>
         </ResponsiveContainer>
       </div>
+
+      {engine === "var" && data.impact_prediction.irf && (
+        <div className="mt-6 pt-4 border-t border-gray-200">
+          <h3 className="text-sm font-medium text-gray-700 mb-1">
+            インパルス応答（+1兆円財政拡張ショック）
+          </h3>
+          <p className="text-xs text-gray-500 mb-2">
+            VAR から推定したショック応答。0期目に GDPギャップが乗数効果分シフトしたとき、
+            その後のホライズンで JGB金利・USD/JPY・コアコアCPI がどう動くか（自由応答）。
+          </p>
+          <div className="overflow-x-auto">
+            <table className="text-xs border border-gray-200 w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-2 py-1 text-left">ホライズン</th>
+                  <th className="px-2 py-1 text-right">GDPギャップ(pp)</th>
+                  <th className="px-2 py-1 text-right">JGB10y(pp)</th>
+                  <th className="px-2 py-1 text-right">USD/JPY(円)</th>
+                  <th className="px-2 py-1 text-right">CPIコアコア(pp)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.impact_prediction.irf.map((p) => (
+                  <tr key={p.horizon} className="border-t border-gray-100">
+                    <td className="px-2 py-1">+{p.horizon}Q</td>
+                    <td className="px-2 py-1 text-right tabular-nums">
+                      {p.gdp_gap?.toFixed(4) ?? "-"}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums">
+                      {p.jgb_10y?.toFixed(4) ?? "-"}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums">
+                      {p.usdjpy?.toFixed(3) ?? "-"}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums">
+                      {p.cpi_core_core?.toFixed(4) ?? "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -138,16 +138,38 @@ class ExchangeRatePrediction(BaseModel):
 
 
 class Assumptions(BaseModel):
-    money_demand_elasticity: float
-    investment_sensitivity: float
-    fiscal_multiplier: float
+    # IS-LM パラメータ（VAR/AR(1) のときは省略）
+    money_demand_elasticity: float | None = None
+    investment_sensitivity: float | None = None
+    fiscal_multiplier: float | None = None
+    # 統計モデル用パラメータ
+    lag_order: int | None = None
+    n_obs: int | None = None
+    n_steps: int | None = None
+    variables: list[str] | None = None
+
+
+class IrfPoint(BaseModel):
+    """インパルス応答関数の1点。
+
+    財政支出ショック（外生変数または内生変数）に対する各内生変数の応答。
+    """
+    horizon: int  # ショックからの四半期数（0=同時期）
+    gdp_gap: float | None = None
+    jgb_10y: float | None = None
+    usdjpy: float | None = None
+    cpi_core_core: float | None = None
 
 
 class ImpactPrediction(BaseModel):
     interest_rate: list[InterestRatePrediction]
     exchange_rate: list[ExchangeRatePrediction]
     model: str = "IS-LM"
+    # 予測エンジン: "is_lm" | "var" | "ar1"
+    engine: str = "is_lm"
     assumptions: Assumptions
+    # VAR のみで埋まる: 財政拡張ショック（+1兆円）に対するIRF
+    irf: list[IrfPoint] | None = None
 
 
 class PredictionResponse(BaseModel):
