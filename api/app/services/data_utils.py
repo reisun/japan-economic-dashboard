@@ -129,3 +129,88 @@ def to_quarter_labelled(series) -> dict[str, float]:
     if series is None:
         return {}
     return {quarter_label(ts): round(float(v), 2) for ts, v in series.items()}
+
+
+# ---------------------------------------------------------------------------
+# e-Stat API helper
+# ---------------------------------------------------------------------------
+
+
+def estat_available() -> bool:
+    """e-Stat API の appId が環境変数に設定されているかを返す。"""
+    return bool(os.getenv("ESTAT_APP_ID"))
+
+
+def fetch_estat_stats_data(
+    stats_data_id: str,
+    extra_params: dict[str, Any] | None = None,
+    timeout: float = 30.0,
+) -> dict | None:
+    """e-Stat API `getStatsData` を叩いて JSON を返す。
+
+    Parameters
+    ----------
+    stats_data_id : 統計表ID（例 "0003427113"）
+    extra_params : クラスフィルタ（cdCat01 等）など追加パラメータ
+    """
+    app_id = os.getenv("ESTAT_APP_ID")
+    if not app_id:
+        logger.info("ESTAT_APP_ID not set -- skipping e-Stat fetch %s", stats_data_id)
+        return None
+    try:
+        import httpx  # type: ignore
+
+        url = "https://api.e-stat.go.jp/rest/3.0/app/json/getStatsData"
+        params: dict[str, Any] = {
+            "appId": app_id,
+            "statsDataId": stats_data_id,
+            "metaGetFlg": "N",
+            "cntGetFlg": "N",
+            "lang": "J",
+        }
+        if extra_params:
+            params.update(extra_params)
+        resp = httpx.get(url, params=params, timeout=timeout)
+        resp.raise_for_status()
+        data = resp.json()
+        # エラーチェック: GET_STATS_DATA.RESULT.STATUS が 0 以外はエラー
+        result = data.get("GET_STATS_DATA", {}).get("RESULT", {})
+        status = result.get("STATUS")
+        if status not in (0, "0"):
+            logger.warning(
+                "e-Stat API returned non-zero status: %s, msg=%s",
+                status,
+                result.get("ERROR_MSG"),
+            )
+            return None
+        logger.info("e-Stat %s fetched", stats_data_id)
+        return data
+    except Exception:
+        logger.exception("e-Stat fetch failed for %s", stats_data_id)
+        return None
+
+
+def monthly_dict_to_quarterly_mean(monthly: dict[str, float]) -> dict[str, float]:
+    """`{'YYYY-MM': value}` 形式の月次辞書 → `{'YYYY-Qn': mean}` 四半期辞書。
+
+    四半期の各3ヶ月のうち、欠損があっても存在月の平均で算出する。
+    完全に空の四半期は出力しない。
+    """
+    if not monthly:
+        return {}
+    bucket: dict[tuple[int, int], list[float]] = {}
+    for ym, v in monthly.items():
+        try:
+            year_s, month_s = ym.split("-")
+            year = int(year_s)
+            month = int(month_s)
+        except Exception:
+            continue
+        q = (month - 1) // 3 + 1
+        bucket.setdefault((year, q), []).append(float(v))
+    out: dict[str, float] = {}
+    for (year, q), vals in bucket.items():
+        if not vals:
+            continue
+        out[f"{year}-Q{q}"] = round(sum(vals) / len(vals), 2)
+    return out
