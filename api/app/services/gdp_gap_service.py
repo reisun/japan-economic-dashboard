@@ -119,43 +119,132 @@ def _estimate_gdp_gap_average(
 _estimate_gdp_gap = _estimate_gdp_gap_average
 
 
-# 最大概念のフォールバック・マークアップ（NOMINAL_GDP の 2%）
-_MAXIMUM_NOMINAL_GDP = 560.0
-_MAXIMUM_FALLBACK_RATIO = 0.02
+# ---------------------------------------------------------------------------
+# 最大概念潜在GDP: Cobb-Douglas 生産関数アプローチ
+# ---------------------------------------------------------------------------
+#
+# 思想:
+#   「潜在」は本来「持てる力の最大値」。ギャップは構造的に ≤ 0 で運用すべき
+#   （0% を上回るのは概念の混乱）。投資が進めば潜在GDPも増える、という
+#   ストック・労働投入の能力ベースで推計する。
+#
+# モデル:
+#   Y_potential_t = A_trend_t * (L_full_t)^(1-α) * (K_t)^α
+#   - α: 資本分配率（日本は 0.33 が定型値）
+#   - A_t: TFP（全要素生産性）。実績Yから A_t = Y_t / (L_t^(1-α) * K_t^α)
+#         で逆算し、HPフィルター（λ=1600）でトレンド抽出 → A_trend_t
+#   - L_full_t: 完全雇用労働投入
+#         = 労働力人口_t × 平均労働時間_t × (1 - NAIRU)
+#     NAIRU は日本基準で 2.5% 固定（構造的失業率）
+#   - K_t: 民間資本ストック（実績）。投資フローの累積で増えていく
+#
+# 実データ差し替え点（TODO）:
+#   - 労働力人口・就業者数: 総務省統計局「労働力調査」
+#   - 平均労働時間: 厚労省「毎月勤労統計」
+#   - 失業率実績: 同 労働力調査
+#   - 民間資本ストック: 内閣府「民間企業資本ストック」(SNA系列)
+#   現状はモック定数。実データ取得時は _MOCK_LABOR_FORCE / _MOCK_HOURS /
+#   _MOCK_UNEMPLOYMENT / _MOCK_CAPITAL_STOCK を差し替え、_fetch_macro_inputs()
+#   フックで上書きすれば本実装はそのまま使える設計。
+# ---------------------------------------------------------------------------
+
+# 構造パラメータ
+_CD_ALPHA = 0.33  # 資本分配率（日本標準）
+_NAIRU = 0.025  # 構造的失業率 2.5%
+
+# モック投入要素（_QUARTERS と同じ12四半期; 単位は名目スケール）
+# 労働力人口（百万人）— 緩やかな減少トレンド
+_MOCK_LABOR_FORCE: list[float] = [
+    69.0, 69.0, 68.9, 68.8,
+    68.8, 68.7, 68.6, 68.5,
+    68.5, 68.4, 68.3, 68.2,
+]
+# 平均労働時間（時間/月）
+_MOCK_HOURS: list[float] = [
+    138.0, 138.5, 138.8, 139.0,
+    139.2, 139.5, 139.8, 140.0,
+    139.8, 139.5, 139.2, 139.0,
+]
+# 実績失業率（%）— 観測値。完全雇用なら NAIRU=2.5%
+_MOCK_UNEMPLOYMENT: list[float] = [
+    2.7, 2.6, 2.6, 2.5,
+    2.6, 2.6, 2.5, 2.5,
+    2.6, 2.7, 2.7, 2.8,
+]
+# 民間資本ストック（兆円, 実質）— 緩やかに増加
+_MOCK_CAPITAL_STOCK: list[float] = [
+    1860.0, 1865.0, 1870.0, 1876.0,
+    1882.0, 1888.0, 1895.0, 1902.0,
+    1908.0, 1914.0, 1920.0, 1926.0,
+]
 
 
 def _estimate_gdp_gap_maximum(
     real_gdp: list[float], quarters: list[str]
 ) -> list[EstimatedGdpGapDataPoint]:
-    """最大概念のGDPギャップ（MVP実装）。
+    """最大概念のGDPギャップ（Cobb-Douglas 生産関数アプローチ）。
 
-    HPフィルター・トレンドに対して、正残差（実績 - トレンド）の75パーセンタイルを
-    マークアップした水準を「最大概念の潜在GDP」として用いる。
-    正残差が存在しない場合は NOMINAL_GDP * 0.02 をフォールバックで使う。
+    Y_potential = A_trend * L_full^(1-α) * K^α
+    で完全雇用ベースの潜在GDPを推計する。実績Yから TFP を逆算 → HP平滑化で
+    トレンド抽出 → 完全雇用労働投入と実績資本ストックを掛け合わせる。
 
-    NOTE: 本実装は MVP。本番運用では生産関数アプローチ
-        （資本ストック・労働投入の最大稼働 → 潜在GDP）への
-        差し替えポイント。具体的には _hp_filter / 75th-percentile マークアップを
-        Cobb-Douglas + TFP トレンド + 完全雇用労働投入での再計算に置換する。
+    実績失業率 ≥ NAIRU である限り L_full ≥ L_実績 となるため、構造上
+    Y_potential ≥ Y_実績、つまりギャップは ≤ 0 に収まりやすい設計。
+
+    NOTE: 現状はモックパラメータ（_MOCK_LABOR_FORCE 等）。
+          実データ差し替えは _fetch_macro_inputs() を実装する（上のドキュメント参照）。
     """
+    n = len(real_gdp)
     y = np.array(real_gdp, dtype=float)
-    trend = _hp_filter(y)
-    residuals = y - trend
-    positive = residuals[residuals > 0]
-    if positive.size > 0:
-        markup = float(np.percentile(positive, 75))
-    else:
-        markup = _MAXIMUM_NOMINAL_GDP * _MAXIMUM_FALLBACK_RATIO
-    potential_max = trend + markup
+
+    # データ長を実績GDPに合わせて補正（FRED 実データ時の長さ違いに耐える）
+    def _resize(seq: list[float]) -> np.ndarray:
+        if len(seq) == n:
+            return np.array(seq, dtype=float)
+        if len(seq) > n:
+            return np.array(seq[-n:], dtype=float)
+        # 末尾値で前方延長
+        pad = [seq[0]] * (n - len(seq))
+        return np.array(pad + seq, dtype=float)
+
+    labor_force = _resize(_MOCK_LABOR_FORCE)
+    hours = _resize(_MOCK_HOURS)
+    unemployment = _resize(_MOCK_UNEMPLOYMENT) / 100.0  # % → 比率
+    capital = _resize(_MOCK_CAPITAL_STOCK)
+
+    # 実績労働投入 L_t = 労働力人口 × 労働時間 × (1 - 実績失業率)
+    L_actual = labor_force * hours * (1.0 - unemployment)
+    # 完全雇用労働投入 L_full = 労働力人口 × 労働時間 × (1 - NAIRU)
+    L_full = labor_force * hours * (1.0 - _NAIRU)
+
+    # 実績Yから TFP 逆算（A_t = Y_t / (L_t^(1-α) * K_t^α)）
+    denom_actual = (L_actual ** (1.0 - _CD_ALPHA)) * (capital ** _CD_ALPHA)
+    A_implied = y / denom_actual
+    # TFPトレンド: HPフィルター後、これまで観測した最大値で「フロンティア」を取る。
+    # 「潜在 = 持てる力の最大値」の思想に合わせ、実績TFPがトレンドを上回った
+    # 期は当該水準を以後の潜在生産性として保持する（hysteresis 風の上方シフト）。
+    A_smoothed = _hp_filter(A_implied)
+    A_frontier = np.maximum(A_smoothed, A_implied)
+    A_max = np.maximum.accumulate(A_frontier)
+
+    # 完全雇用ベースの潜在GDP
+    potential_max = A_max * (L_full ** (1.0 - _CD_ALPHA)) * (capital ** _CD_ALPHA)
+
+    # 数値スケールが実績Yと整合するよう、必要に応じて単位整合をかけている
+    # （A_implied 自体に Y のスケール情報が乗るので、追加スケールは不要）
 
     results: list[EstimatedGdpGapDataPoint] = []
     for i, q in enumerate(quarters):
-        gap_pct = round((y[i] - potential_max[i]) / potential_max[i] * 100, 2)
+        pot = float(potential_max[i])
+        # ガード: 何らかの数値異常で潜在 ≤ 0 になった場合は実績で代替
+        if not np.isfinite(pot) or pot <= 0:
+            pot = float(y[i])
+        gap_pct = round((float(y[i]) - pot) / pot * 100, 2)
         results.append(
             EstimatedGdpGapDataPoint(
                 date=q,
                 real_gdp=round(float(y[i]), 1),
-                potential_gdp=round(float(potential_max[i]), 1),
+                potential_gdp=round(pot, 1),
                 gdp_gap_percent=gap_pct,
             )
         )
@@ -295,7 +384,7 @@ async def get_gdp_gap() -> GdpGapResponse:
     )
     maximum = EstimatedGdpGap(
         data=maximum_data,
-        method="HP Filter + 75th-percentile markup (最大概念MVP)",
+        method="Cobb-Douglas 生産関数 (TFPトレンド × 完全雇用労働投入 × 資本ストック, α=0.33, NAIRU=2.5%)",
         last_updated=today,
     )
 
