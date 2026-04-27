@@ -7,6 +7,7 @@ without requiring numpy/scipy/pydantic.
 
 import json
 import os
+import re
 from datetime import datetime, timedelta
 
 OUTPUT_DIRS = [
@@ -606,19 +607,122 @@ def generate_inflation():
 # Main
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# 共通レンジ（GDPギャップ実績期間）でデータを揃えるユーティリティ
+# ---------------------------------------------------------------------------
+
+
+def _parse_quarter(label):
+    m = re.match(r"^(\d{4})-Q([1-4])$", str(label).strip())
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def _parse_iso(label):
+    m = re.match(r"^(\d{4})-(\d{2})(?:-(\d{2}))?$", str(label).strip())
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def _q_index(year, q):
+    return year * 4 + (q - 1)
+
+
+def _date_in_range(date_str, start_yq, end_yq):
+    yq = _parse_quarter(date_str)
+    if yq is not None:
+        return _q_index(*start_yq) <= _q_index(*yq) <= _q_index(*end_yq)
+    iso = _parse_iso(date_str)
+    if iso is not None:
+        year, month = iso
+        q = (month - 1) // 3 + 1
+        return _q_index(*start_yq) <= _q_index(year, q) <= _q_index(*end_yq)
+    return True
+
+
+def _filter_to_range(items, start_yq, end_yq, key="date", label=None):
+    out = [it for it in items if _date_in_range(it.get(key, ""), start_yq, end_yq)]
+    if items and len(out) < max(2, len(items) // 4) and label:
+        print(
+            f"WARN: 共通レンジ適用で {label} が {len(items)} → {len(out)} に減少"
+        )
+    return out
+
+
+def _gdp_gap_range(gdp_gap_data):
+    """gdp_gap_data の estimated_average から (start_yq, end_yq) を抽出。"""
+    series = gdp_gap_data["estimated_average"]["data"]
+    if not series:
+        return (2022, 1), (2024, 4)
+    start = _parse_quarter(series[0]["date"]) or (2022, 1)
+    end = _parse_quarter(series[-1]["date"]) or (2024, 4)
+    return start, end
+
+
+def _apply_unified_range(gdp_gap, fund_demand, rates, inflation):
+    """gdp_gap の実績期間に他3データを揃える（in-place 編集）。"""
+    start_yq, end_yq = _gdp_gap_range(gdp_gap)
+
+    # gdp-gap 自体（cabinet_office, civilian, maximum も念のため）
+    for key in ("cabinet_office", "estimated_average", "estimated_maximum",
+                "estimated_civilian", "estimated"):
+        if key in gdp_gap and "data" in gdp_gap[key]:
+            gdp_gap[key]["data"] = _filter_to_range(
+                gdp_gap[key]["data"], start_yq, end_yq, label=f"gdp_gap.{key}"
+            )
+
+    # fund-demand
+    fund_demand["flow_of_funds"]["data"] = _filter_to_range(
+        fund_demand["flow_of_funds"]["data"], start_yq, end_yq, label="flow_of_funds"
+    )
+    fund_demand["bank_lending"]["data"] = _filter_to_range(
+        fund_demand["bank_lending"]["data"], start_yq, end_yq, label="bank_lending"
+    )
+
+    # rates
+    rates["interest_rates"]["fred"] = _filter_to_range(
+        rates["interest_rates"]["fred"], start_yq, end_yq, label="rates.fred"
+    )
+    rates["interest_rates"]["boj"] = _filter_to_range(
+        rates["interest_rates"]["boj"], start_yq, end_yq, label="rates.boj"
+    )
+    rates["exchange_rates"]["yahoo_finance"] = _filter_to_range(
+        rates["exchange_rates"]["yahoo_finance"], start_yq, end_yq, label="fx.yahoo"
+    )
+    rates["exchange_rates"]["fred"] = _filter_to_range(
+        rates["exchange_rates"]["fred"], start_yq, end_yq, label="fx.fred"
+    )
+
+    # inflation
+    inflation["data"] = _filter_to_range(
+        inflation["data"], start_yq, end_yq, label="inflation"
+    )
+
+
 def main():
     prediction_max = generate_prediction("maximum")
+    gdp_gap = generate_gdp_gap()
+    fund_demand = generate_fund_demand()
+    rates = generate_rates()
+    inflation = generate_inflation()
+
+    # 共通レンジ統一: GDPギャップの実績期間に各実績データを揃える
+    # 予測（prediction-*.json）は据え置き
+    _apply_unified_range(gdp_gap, fund_demand, rates, inflation)
+
     files = {
-        "gdp-gap.json": generate_gdp_gap(),
-        "fund-demand.json": generate_fund_demand(),
-        "rates.json": generate_rates(),
+        "gdp-gap.json": gdp_gap,
+        "fund-demand.json": fund_demand,
+        "rates.json": rates,
         # デフォルト = maximum（後方互換のため prediction.json も残す）
         "prediction.json": prediction_max,
         "prediction-maximum.json": prediction_max,
         "prediction-average.json": generate_prediction("average"),
         "prediction-cabinet_office.json": generate_prediction("cabinet_office"),
         "prediction-civilian.json": generate_prediction("civilian"),
-        "inflation.json": generate_inflation(),
+        "inflation.json": inflation,
     }
 
     for output_dir in OUTPUT_DIRS:

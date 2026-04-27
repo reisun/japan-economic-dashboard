@@ -23,6 +23,7 @@ from app.models.schemas import (
     FundDemandResponse,
 )
 from app.services.cache import cached
+from app.services.common_range import filter_to_actual_range
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,10 @@ async def get_fund_demand() -> FundDemandResponse:
     flow_data = _fetch_flow_of_funds()
     if flow_data is None:
         flow_data = [FlowOfFundsDataPoint(**d) for d in _MOCK_FLOW_OF_FUNDS]
+
+    # 共通レンジ（GDPギャップ実績期間）に揃える
+    lending_data = filter_to_actual_range(lending_data, label="bank_lending")
+    flow_data = filter_to_actual_range(flow_data, label="flow_of_funds")
 
     return FundDemandResponse(
         flow_of_funds=FlowOfFunds(data=flow_data),
