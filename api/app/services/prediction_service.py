@@ -51,8 +51,10 @@ BASELINE_USDJPY = 150.0
 # (simplified: higher domestic rates → stronger yen)
 UIP_SENSITIVITY = 2.0  # yen per percentage point
 
-# Quarters for prediction
-PREDICTION_QUARTERS = ["2025-Q1", "2025-Q2", "2025-Q3", "2025-Q4"]
+# Quarters for prediction (3 years = 12 quarters)
+PREDICTION_QUARTERS = [
+    f"{y}-Q{q}" for y in range(2025, 2028) for q in range(1, 5)
+]
 
 
 # ---------------------------------------------------------------------------
@@ -69,10 +71,12 @@ def _compute_is_lm_impact(
       - Fiscal expansion dG shifts IS right → both Y and r increase
       - dr = (dG * FISCAL_MULTIPLIER * MONEY_DEMAND_ELASTICITY)
              / (INVESTMENT_SENSITIVITY + MONEY_DEMAND_ELASTICITY) / NOMINAL_GDP * 100
-      - Spread over 4 quarters with diminishing impact
+      - Spread over 12 quarters with gradual phase-in
 
     Returns (jgb_10y_list, usdjpy_list) for each quarter.
     """
+    n = len(PREDICTION_QUARTERS)
+
     # Total interest rate impact from fiscal expansion (percentage points)
     total_dr = (
         fiscal_spending_trillion
@@ -83,8 +87,11 @@ def _compute_is_lm_impact(
         * 100
     )
 
-    # Phase in over quarters: 0% (actual), 33%, 67%, 100%
-    phase_in = [0.0, 0.33, 0.67, 1.0]
+    # Phase in: 0% at Q1 (actual), then ramp to 100% by Q5, hold steady after
+    ramp_quarters = 4
+    phase_in = [0.0] + [
+        min(1.0, i / ramp_quarters) for i in range(1, n)
+    ]
 
     jgb_rates: list[float] = []
     usdjpy_rates: list[float] = []
