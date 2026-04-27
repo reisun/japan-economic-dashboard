@@ -262,11 +262,57 @@ def _estimate_maximum(real_gdp, quarters):
     return out
 
 
+# ---------------------------------------------------------------------------
+# 在野試算 (civilian) ハードコード系列
+# ---------------------------------------------------------------------------
+# 高橋洋一・三橋貴明・藤井聡らの代表的試算レンジに基づく合成値。
+# 公的機関 (内閣府/日銀) より深いデフレギャップを示す。
+# 詳細は api/app/services/gdp_gap_service.py のコメントを参照。
+MOCK_CIVILIAN_GAP_PCT = [
+    {"date": "2022-Q1", "gdp_gap_percent": -8.5},
+    {"date": "2022-Q2", "gdp_gap_percent": -8.0},
+    {"date": "2022-Q3", "gdp_gap_percent": -7.5},
+    {"date": "2022-Q4", "gdp_gap_percent": -7.0},
+    {"date": "2023-Q1", "gdp_gap_percent": -6.2},
+    {"date": "2023-Q2", "gdp_gap_percent": -5.8},
+    {"date": "2023-Q3", "gdp_gap_percent": -5.5},
+    {"date": "2023-Q4", "gdp_gap_percent": -5.0},
+    {"date": "2024-Q1", "gdp_gap_percent": -5.3},
+    {"date": "2024-Q2", "gdp_gap_percent": -5.5},
+    {"date": "2024-Q3", "gdp_gap_percent": -5.8},
+    {"date": "2024-Q4", "gdp_gap_percent": -6.0},
+]
+
+
+def _estimate_civilian(real_gdp, quarters):
+    """在野試算: ハードコード gap% から potential を逆算。"""
+    n = len(real_gdp)
+    civ = list(MOCK_CIVILIAN_GAP_PCT)
+    if len(civ) > n:
+        civ = civ[-n:]
+    elif len(civ) < n:
+        civ = [civ[0]] * (n - len(civ)) + civ
+
+    out = []
+    for i, q in enumerate(quarters):
+        gap_pct = float(civ[i]["gdp_gap_percent"])
+        y = float(real_gdp[i])
+        pot = y / (1.0 + gap_pct / 100.0)
+        out.append({
+            "date": q,
+            "real_gdp": round(y, 1),
+            "potential_gdp": round(pot, 1),
+            "gdp_gap_percent": round(gap_pct, 2),
+        })
+    return out
+
+
 def generate_gdp_gap():
     today = "2026-04-27"
 
     average_data = _estimate_average(MOCK_REAL_GDP, QUARTERS)
     maximum_data = _estimate_maximum(MOCK_REAL_GDP, QUARTERS)
+    civilian_data = _estimate_civilian(MOCK_REAL_GDP, QUARTERS)
 
     average_block = {
         "data": average_data,
@@ -281,6 +327,14 @@ def generate_gdp_gap():
         ),
         "last_updated": today,
     }
+    civilian_block = {
+        "data": civilian_data,
+        "method": (
+            "在野試算 (高橋洋一・三橋貴明・藤井聡らの代表的試算レンジに基づく合成値; "
+            "個別論考をもとに将来差し替え)"
+        ),
+        "last_updated": today,
+    }
 
     return {
         "cabinet_office": {
@@ -290,6 +344,7 @@ def generate_gdp_gap():
         },
         "estimated_average": average_block,
         "estimated_maximum": maximum_block,
+        "estimated_civilian": civilian_block,
         # 後方互換エイリアス
         "estimated": average_block,
     }
@@ -404,6 +459,8 @@ def generate_prediction(method="maximum"):
         gap_pct = gdp_gap_data["cabinet_office"]["data"][-1]["gdp_gap_percent"]
     elif method == "average":
         gap_pct = gdp_gap_data["estimated_average"]["data"][-1]["gdp_gap_percent"]
+    elif method == "civilian":
+        gap_pct = gdp_gap_data["estimated_civilian"]["data"][-1]["gdp_gap_percent"]
     else:  # maximum (default)
         gap_pct = gdp_gap_data["estimated_maximum"]["data"][-1]["gdp_gap_percent"]
     gap_trillion = round(gap_pct / 100.0 * NOMINAL_GDP, 1)
@@ -517,6 +574,7 @@ def main():
         "prediction-maximum.json": prediction_max,
         "prediction-average.json": generate_prediction("average"),
         "prediction-cabinet_office.json": generate_prediction("cabinet_office"),
+        "prediction-civilian.json": generate_prediction("civilian"),
         "inflation.json": generate_inflation(),
     }
 

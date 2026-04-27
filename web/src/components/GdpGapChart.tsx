@@ -22,12 +22,21 @@ const METHOD_LABEL: Record<GdpGapMethod, string> = {
   cabinet_office: "内閣府公表",
   average: "平均概念",
   maximum: "最大概念",
+  civilian: "在野試算",
 };
 
 const METHOD_DESC: Record<GdpGapMethod, string> = {
   cabinet_office: "内閣府公表のGDPギャップ%",
   average: "HPフィルターによる平均概念（旧 estimated）",
   maximum: "Cobb-Douglas（CBO methodology: 完全雇用労働投入 × capital services × TFP_max, α=0.33, NAIRU=2.5%）",
+  civilian: "在野試算（高橋洋一・三橋貴明・藤井聡らの代表的試算レンジに基づく合成系列）",
+};
+
+const METHOD_COLOR: Record<GdpGapMethod, string> = {
+  cabinet_office: "#2563eb",
+  average: "#dc2626",
+  maximum: "#059669",
+  civilian: "#9333ea",
 };
 
 function buildSeries(
@@ -41,7 +50,11 @@ function buildSeries(
     }));
   }
   const block =
-    method === "average" ? data.estimated_average : data.estimated_maximum;
+    method === "average"
+      ? data.estimated_average
+      : method === "maximum"
+      ? data.estimated_maximum
+      : data.estimated_civilian;
   return block.data.map((p) => ({ date: p.date, value: p.gdp_gap_percent }));
 }
 
@@ -49,10 +62,12 @@ export function GdpGapChart() {
   const [method, setMethod] = useState<GdpGapMethod>("maximum");
   const { data, loading, error } = useApi<GdpGapResponse>("/gdp-gap");
 
+  // タブ表示順: 内閣府公表 / 平均概念 / 最大概念 / 在野試算
   const tabs: { key: GdpGapMethod; label: string }[] = [
     { key: "cabinet_office", label: METHOD_LABEL.cabinet_office },
     { key: "average", label: METHOD_LABEL.average },
     { key: "maximum", label: METHOD_LABEL.maximum },
+    { key: "civilian", label: METHOD_LABEL.civilian },
   ];
 
   const renderTabs = () => (
@@ -105,7 +120,9 @@ export function GdpGapChart() {
       ? `出典: ${data.cabinet_office.source}`
       : method === "average"
       ? `推計: ${data.estimated_average.method}`
-      : `推計: ${data.estimated_maximum.method}`;
+      : method === "maximum"
+      ? `推計: ${data.estimated_maximum.method}`
+      : `推計: ${data.estimated_civilian.method}`;
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -128,13 +145,7 @@ export function GdpGapChart() {
             type="monotone"
             dataKey="value"
             name={METHOD_LABEL[method]}
-            stroke={
-              method === "cabinet_office"
-                ? "#2563eb"
-                : method === "average"
-                ? "#dc2626"
-                : "#059669"
-            }
+            stroke={METHOD_COLOR[method]}
             strokeWidth={2}
             dot={false}
             connectNulls

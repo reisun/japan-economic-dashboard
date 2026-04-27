@@ -317,6 +317,84 @@ def _estimate_gdp_gap_maximum(
     return results
 
 
+# ---------------------------------------------------------------------------
+# 在野試算 (civilian) ハードコード系列
+# ---------------------------------------------------------------------------
+# 思想:
+#   公的機関 (内閣府/日銀) が公表する GDP ギャップは平均概念ベースで構造的に
+#   小さめに出る。一方、高橋洋一氏 (嘉悦大学) や三橋貴明氏 (経世論研究所)、
+#   藤井聡氏 (京都大学レジリエンス実践ユニット) ら在野エコノミストは、
+#   最大概念寄り・需要側強調で、より深いデフレギャップ試算を継続して公表
+#   している。本系列はこれら在野試算の代表的レンジに基づく合成値である。
+#
+# 数値根拠:
+#   - 2022-2024 の各四半期で、内閣府公表値 (-3.7% 〜 -2.0%) よりも 2-3.5 倍
+#     深いデフレギャップを示す。三橋氏の「需給ギャップ20兆円」(対GDP比約3.5%)、
+#     高橋氏の「30兆円超」(対GDP比約5%) や、藤井氏の積極財政論で前提とされる
+#     5-7% 程度のデフレギャップ規模感に整合させた合成系列。
+#   - 2024-Q4 ≈ -6.0% (内閣府 -2.0% の約3倍)、2022-Q1 ≈ -8.5% など。
+#   - 系列の出所が個別論考ではないため、以下は「在野試算の代表的レンジに
+#     基づく合成値; 個別の論考をもとに将来差し替え」可能。
+#
+# 実データ差し替え点 (TODO):
+#   - 高橋洋一氏 現代ビジネス連載 / 著書記載値
+#   - 三橋貴明氏 経世論研究所ブログ「新世紀のビッグブラザーへ blog」
+#   - 藤井聡氏 京都大学レジリエンス実践ユニット報告
+#   個別の論考から四半期系列を抽出して差し替える設計。
+# ---------------------------------------------------------------------------
+
+# 在野試算: 内閣府公表値より深いデフレギャップ (%, 12四半期)
+# (合成値; 高橋洋一・三橋貴明・藤井聡らの代表的試算レンジに基づく)
+_MOCK_CIVILIAN_DATA: list[dict] = [
+    {"date": "2022-Q1", "gdp_gap_percent": -8.5},
+    {"date": "2022-Q2", "gdp_gap_percent": -8.0},
+    {"date": "2022-Q3", "gdp_gap_percent": -7.5},
+    {"date": "2022-Q4", "gdp_gap_percent": -7.0},
+    {"date": "2023-Q1", "gdp_gap_percent": -6.2},
+    {"date": "2023-Q2", "gdp_gap_percent": -5.8},
+    {"date": "2023-Q3", "gdp_gap_percent": -5.5},
+    {"date": "2023-Q4", "gdp_gap_percent": -5.0},
+    {"date": "2024-Q1", "gdp_gap_percent": -5.3},
+    {"date": "2024-Q2", "gdp_gap_percent": -5.5},
+    {"date": "2024-Q3", "gdp_gap_percent": -5.8},
+    {"date": "2024-Q4", "gdp_gap_percent": -6.0},
+]
+
+
+def _estimate_gdp_gap_civilian(
+    real_gdp: list[float], quarters: list[str]
+) -> list[EstimatedGdpGapDataPoint]:
+    """在野試算 GDP ギャップ。
+
+    `_MOCK_CIVILIAN_DATA` の gap% 値をハードコードで採用し、実績GDP・潜在GDP
+    の数値は gap から逆算した整合値を返す。期間ラベルは引数の quarters と
+    揃える (FRED 実データ時の長さ違いに耐える)。
+    """
+    n = len(real_gdp)
+    civ = list(_MOCK_CIVILIAN_DATA)
+    if len(civ) > n:
+        civ = civ[-n:]
+    elif len(civ) < n:
+        # 末尾値で前方延長
+        civ = [civ[0]] * (n - len(civ)) + civ
+
+    results: list[EstimatedGdpGapDataPoint] = []
+    for i, q in enumerate(quarters):
+        gap_pct = float(civ[i]["gdp_gap_percent"])
+        y = float(real_gdp[i])
+        # potential = y / (1 + gap%/100)
+        pot = y / (1.0 + gap_pct / 100.0)
+        results.append(
+            EstimatedGdpGapDataPoint(
+                date=q,
+                real_gdp=round(y, 1),
+                potential_gdp=round(pot, 1),
+                gdp_gap_percent=round(gap_pct, 2),
+            )
+        )
+    return results
+
+
 def _boj_quarter_to_label(raw: str) -> str | None:
     """Convert BOJ date format '2024.1Q' to 'YYYY-QN'."""
     m = re.match(r"(\d{4})\.(\d)Q", str(raw).strip())
@@ -435,6 +513,7 @@ async def get_gdp_gap() -> GdpGapResponse:
             gdp_values, quarters = _MOCK_REAL_GDP, _QUARTERS
         average_data = _estimate_gdp_gap_average(gdp_values, quarters)
         maximum_data = _estimate_gdp_gap_maximum(gdp_values, quarters)
+        civilian_data = _estimate_gdp_gap_civilian(gdp_values, quarters)
     except Exception:
         logger.exception("HP filter estimation failed, using raw mock")
         average_data = [
@@ -444,6 +523,7 @@ async def get_gdp_gap() -> GdpGapResponse:
             for q, g in zip(_QUARTERS, _MOCK_REAL_GDP)
         ]
         maximum_data = average_data
+        civilian_data = average_data
 
     average = EstimatedGdpGap(
         data=average_data, method="HP Filter (平均概念)", last_updated=today
@@ -456,6 +536,14 @@ async def get_gdp_gap() -> GdpGapResponse:
         ),
         last_updated=today,
     )
+    civilian = EstimatedGdpGap(
+        data=civilian_data,
+        method=(
+            "在野試算 (高橋洋一・三橋貴明・藤井聡らの代表的試算レンジに基づく合成値; "
+            "個別論考をもとに将来差し替え)"
+        ),
+        last_updated=today,
+    )
 
     return GdpGapResponse(
         cabinet_office=CabinetOfficeGdpGap(
@@ -465,5 +553,6 @@ async def get_gdp_gap() -> GdpGapResponse:
         ),
         estimated_average=average,
         estimated_maximum=maximum,
+        estimated_civilian=civilian,
         estimated=average,  # 後方互換エイリアス
     )

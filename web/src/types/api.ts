@@ -25,11 +25,13 @@ export interface GdpGapResponse {
   };
   estimated_average: EstimatedGdpGapBlock;
   estimated_maximum: EstimatedGdpGapBlock;
+  /** 在野試算 (高橋洋一・三橋貴明・藤井聡らの代表的レンジに基づく合成系列) */
+  estimated_civilian: EstimatedGdpGapBlock;
   /** 後方互換エイリアス: estimated_average と同じ */
   estimated: EstimatedGdpGapBlock;
 }
 
-export type GdpGapMethod = "cabinet_office" | "average" | "maximum";
+export type GdpGapMethod = "cabinet_office" | "average" | "maximum" | "civilian";
 
 // Fund Demand types
 export interface FlowOfFundsDataPoint {
