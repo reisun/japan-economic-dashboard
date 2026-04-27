@@ -14,4 +14,15 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // Recharts 単体で 500kB 超えるが、独立 chunk 化しキャッシュ効率を優先するため閾値を引き上げる
+    chunkSizeWarningLimit: 700,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          recharts: ["recharts"],
+        },
+      },
+    },
+  },
 });
