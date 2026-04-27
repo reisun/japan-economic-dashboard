@@ -15,6 +15,8 @@ import logging
 import os
 from datetime import datetime, timedelta
 
+from app.services.cache import cached
+
 from app.models.schemas import (
     BojRateDataPoint,
     ExchangeRateDataPoint,
@@ -59,6 +61,7 @@ _MOCK_FRED_FX: list[dict] = [
 # ---------------------------------------------------------------------------
 
 
+@cached("fred_rates")
 def _fetch_fred_rates() -> list[FredRateDataPoint] | None:
     """Fetch US interest rates from FRED."""
     api_key = os.getenv("FRED_API_KEY")
@@ -95,6 +98,7 @@ def _fetch_fred_rates() -> list[FredRateDataPoint] | None:
         return None
 
 
+@cached("fred_fx")
 def _fetch_fred_fx() -> list[ExchangeRateDataPoint] | None:
     """Fetch USD/JPY from FRED."""
     api_key = os.getenv("FRED_API_KEY")
@@ -117,6 +121,7 @@ def _fetch_fred_fx() -> list[ExchangeRateDataPoint] | None:
         return None
 
 
+@cached("yahoo_fx")
 def _fetch_yahoo_fx() -> list[ExchangeRateDataPoint] | None:
     """Fetch USD/JPY from Yahoo Finance."""
     try:
