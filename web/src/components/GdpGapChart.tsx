@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import {
   LineChart,
   Line,
@@ -58,8 +59,20 @@ function buildSeries(
   return block.data.map((p) => ({ date: p.date, value: p.gdp_gap_percent }));
 }
 
-export function GdpGapChart() {
-  const [method, setMethod] = useState<GdpGapMethod>("maximum");
+interface GdpGapChartProps {
+  /**
+   * 選択中のギャップ系統。Dashboard 側で保持して PolicyMatrix と共有する。
+   * 未指定の場合は内部 state で `maximum` をデフォルトとする（後方互換）。
+   */
+  method?: GdpGapMethod;
+  onMethodChange?: Dispatch<SetStateAction<GdpGapMethod>>;
+}
+
+export function GdpGapChart({ method: methodProp, onMethodChange }: GdpGapChartProps = {}) {
+  const [internalMethod, setInternalMethod] = useState<GdpGapMethod>("maximum");
+  const method = methodProp ?? internalMethod;
+  const setMethod: Dispatch<SetStateAction<GdpGapMethod>> =
+    onMethodChange ?? setInternalMethod;
   const { data, loading, error } = useApi<GdpGapResponse>("/gdp-gap");
 
   // タブ表示順: 内閣府公表 / 平均概念 / 最大概念 / 在野試算
