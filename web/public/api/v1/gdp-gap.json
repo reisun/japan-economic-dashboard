@@ -1,0 +1,134 @@
+{
+  "cabinet_office": {
+    "data": [
+      {
+        "date": "2022-Q1",
+        "gdp_gap_percent": -3.7
+      },
+      {
+        "date": "2022-Q2",
+        "gdp_gap_percent": -3.2
+      },
+      {
+        "date": "2022-Q3",
+        "gdp_gap_percent": -2.8
+      },
+      {
+        "date": "2022-Q4",
+        "gdp_gap_percent": -2.3
+      },
+      {
+        "date": "2023-Q1",
+        "gdp_gap_percent": -1.8
+      },
+      {
+        "date": "2023-Q2",
+        "gdp_gap_percent": -1.4
+      },
+      {
+        "date": "2023-Q3",
+        "gdp_gap_percent": -1.1
+      },
+      {
+        "date": "2023-Q4",
+        "gdp_gap_percent": -0.6
+      },
+      {
+        "date": "2024-Q1",
+        "gdp_gap_percent": -0.9
+      },
+      {
+        "date": "2024-Q2",
+        "gdp_gap_percent": -1.2
+      },
+      {
+        "date": "2024-Q3",
+        "gdp_gap_percent": -1.6
+      },
+      {
+        "date": "2024-Q4",
+        "gdp_gap_percent": -2.0
+      }
+    ],
+    "source": "内閣府",
+    "last_updated": "2026-04-27"
+  },
+  "estimated": {
+    "data": [
+      {
+        "date": "2022-Q1",
+        "real_gdp": 535.0,
+        "potential_gdp": 538.6,
+        "gdp_gap_percent": -0.67
+      },
+      {
+        "date": "2022-Q2",
+        "real_gdp": 537.0,
+        "potential_gdp": 539.6,
+        "gdp_gap_percent": -0.48
+      },
+      {
+        "date": "2022-Q3",
+        "real_gdp": 539.5,
+        "potential_gdp": 540.6,
+        "gdp_gap_percent": -0.2
+      },
+      {
+        "date": "2022-Q4",
+        "real_gdp": 542.0,
+        "potential_gdp": 541.6,
+        "gdp_gap_percent": 0.08
+      },
+      {
+        "date": "2023-Q1",
+        "real_gdp": 544.0,
+        "potential_gdp": 542.6,
+        "gdp_gap_percent": 0.26
+      },
+      {
+        "date": "2023-Q2",
+        "real_gdp": 546.0,
+        "potential_gdp": 543.5,
+        "gdp_gap_percent": 0.45
+      },
+      {
+        "date": "2023-Q3",
+        "real_gdp": 548.5,
+        "potential_gdp": 544.5,
+        "gdp_gap_percent": 0.74
+      },
+      {
+        "date": "2023-Q4",
+        "real_gdp": 551.0,
+        "potential_gdp": 545.4,
+        "gdp_gap_percent": 1.02
+      },
+      {
+        "date": "2024-Q1",
+        "real_gdp": 549.0,
+        "potential_gdp": 546.3,
+        "gdp_gap_percent": 0.49
+      },
+      {
+        "date": "2024-Q2",
+        "real_gdp": 547.0,
+        "potential_gdp": 547.2,
+        "gdp_gap_percent": -0.04
+      },
+      {
+        "date": "2024-Q3",
+        "real_gdp": 545.0,
+        "potential_gdp": 548.1,
+        "gdp_gap_percent": -0.57
+      },
+      {
+        "date": "2024-Q4",
+        "real_gdp": 543.0,
+        "potential_gdp": 549.0,
+        "gdp_gap_percent": -1.09
+      }
+    ],
+    "method": "HP Filter",
+    "last_updated": "2026-04-27"
+  }
+}
