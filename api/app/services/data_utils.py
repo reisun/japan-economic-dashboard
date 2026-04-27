@@ -11,10 +11,52 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta
+import threading
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Data-source status registry
+#
+# 各サービス（FRED / BOJ / e-Stat / その他）の最終取得結果を記録し、
+# `/api/v1/health/data-sources` エンドポイントから参照できるようにする。
+# secret は記録しない。値（ペイロード）も記録しない。
+# ---------------------------------------------------------------------------
+
+
+_status_lock = threading.Lock()
+_data_source_status: dict[str, dict[str, Any]] = {}
+
+
+def record_data_source_status(
+    name: str,
+    *,
+    ok: bool,
+    detail: str | None = None,
+) -> None:
+    """データソース取得の成否を登録する（最終時刻を上書き）。
+
+    Parameters
+    ----------
+    name : データソース識別子（例 "fred:DGS10", "estat:cpi", "boj:fof"）
+    ok : 取得成功なら True、失敗・未設定なら False
+    detail : 任意の補足情報（失敗理由ラベル等）。secret は含めないこと。
+    """
+    with _status_lock:
+        _data_source_status[name] = {
+            "ok": bool(ok),
+            "detail": detail,
+            "last_checked": datetime.now(timezone.utc).isoformat(),
+        }
+
+
+def get_data_source_status() -> dict[str, dict[str, Any]]:
+    """登録済みデータソース状態のスナップショットを返す。"""
+    with _status_lock:
+        return {k: dict(v) for k, v in _data_source_status.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -22,9 +64,24 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+_fred_missing_warned = False
+
+
 def fred_available() -> bool:
     """FRED API key が環境変数に設定されているかを返す。"""
     return bool(os.getenv("FRED_API_KEY"))
+
+
+def warn_fred_key_missing_once() -> None:
+    """FRED_API_KEY 未設定時、起動セッション中で最初の1回だけ警告ログを出す。"""
+    global _fred_missing_warned
+    if _fred_missing_warned:
+        return
+    _fred_missing_warned = True
+    logger.warning(
+        "FRED_API_KEY is not set; FRED-backed series will fall back to mock data. "
+        "See README.md 'Setup' section for how to obtain and configure a key."
+    )
 
 
 def fetch_fred_series(series_id: str, years: int = 6) -> Any | None:
@@ -34,10 +91,15 @@ def fetch_fred_series(series_id: str, years: int = 6) -> Any | None:
     ----------
     series_id : FRED 系列 ID
     years : 過去何年分を取得するか（YoY 計算に余裕を持たせるなら 6 推奨）
+
+    取得成否は `record_data_source_status("fred:<series_id>", ...)` に記録する。
     """
+    status_key = f"fred:{series_id}"
     api_key = os.getenv("FRED_API_KEY")
     if not api_key:
-        logger.info("FRED_API_KEY not set -- skipping %s", series_id)
+        warn_fred_key_missing_once()
+        logger.debug("FRED_API_KEY not set -- skipping %s", series_id)
+        record_data_source_status(status_key, ok=False, detail="api_key_missing")
         return None
     try:
         from fredapi import Fred  # type: ignore
@@ -51,6 +113,7 @@ def fetch_fred_series(series_id: str, years: int = 6) -> Any | None:
         series = series.dropna()
         if series.empty:
             logger.warning("FRED %s returned empty series", series_id)
+            record_data_source_status(status_key, ok=False, detail="empty_series")
             return None
         logger.info(
             "FRED %s fetched: %d points, %s..%s",
@@ -59,9 +122,18 @@ def fetch_fred_series(series_id: str, years: int = 6) -> Any | None:
             series.index[0].date(),
             series.index[-1].date(),
         )
+        record_data_source_status(
+            status_key,
+            ok=True,
+            detail=f"points={len(series)}",
+        )
         return series
-    except Exception:
+    except Exception as e:
         logger.exception("FRED %s fetch failed", series_id)
+        # 例外型のみ記録（メッセージにキー混入リスクを避ける）
+        record_data_source_status(
+            status_key, ok=False, detail=f"exception:{type(e).__name__}"
+        )
         return None
 
 
@@ -153,9 +225,13 @@ def fetch_estat_stats_data(
     stats_data_id : 統計表ID（例 "0003427113"）
     extra_params : クラスフィルタ（cdCat01 等）など追加パラメータ
     """
+    status_key = f"estat:{stats_data_id}"
     app_id = os.getenv("ESTAT_APP_ID")
     if not app_id:
-        logger.info("ESTAT_APP_ID not set -- skipping e-Stat fetch %s", stats_data_id)
+        logger.debug(
+            "ESTAT_APP_ID not set -- skipping e-Stat fetch %s", stats_data_id
+        )
+        record_data_source_status(status_key, ok=False, detail="api_key_missing")
         return None
     try:
         import httpx  # type: ignore
@@ -182,11 +258,18 @@ def fetch_estat_stats_data(
                 status,
                 result.get("ERROR_MSG"),
             )
+            record_data_source_status(
+                status_key, ok=False, detail=f"api_status:{status}"
+            )
             return None
         logger.info("e-Stat %s fetched", stats_data_id)
+        record_data_source_status(status_key, ok=True, detail=None)
         return data
-    except Exception:
+    except Exception as e:
         logger.exception("e-Stat fetch failed for %s", stats_data_id)
+        record_data_source_status(
+            status_key, ok=False, detail=f"exception:{type(e).__name__}"
+        )
         return None
 
 

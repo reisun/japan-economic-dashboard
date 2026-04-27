@@ -20,11 +20,10 @@
 - [x] CPIコアコアの実データ取得（e-Stat API → 総務省統計局CSV → モック の三段フォールバック; ESTAT_APP_ID 設定で実データ反映）
 - [x] BOJ 資金循環統計（flow of funds）の実データ取得（BOJ 時系列データ検索サイト ZIP → BOJ 公表ページ Excel(現在404) → e-Stat API → モック の四段フォールバック; A 経路で家計/非金融法人/一般政府の純貸出/純借入を実取得）
 - [x] ユーザーが任意の財政支出額を入力してシナリオシミュレーション（API: `?fiscal_spending_trillion=` クエリ; UI: 数値入力＋スライダー＋「自動」ボタン, debounce 500ms; 静的モードでは disabled）
+- [x] FRED API key 設定による実データ取得（README に Setup 手順を記載、`.env.example` に `FRED_API_KEY=` 確認、未設定時は起動時に 1 回だけ警告ログを出してモックフォールバック、`/api/v1/health/data-sources` で各シリーズの取得成否を確認可能）
 
 ## Backlog
 
-
-- [ ] FRED API key 設定による実データ取得
 - [ ] VARなど統計的回帰モデルへの拡張
 - [ ] Recharts chunk分割（dynamic import）
 - [ ] reverse-proxy への統合
