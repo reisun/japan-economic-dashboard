@@ -3,8 +3,8 @@
 Real data sources:
   - FRED API: fredapi library (requires FRED_API_KEY env var)
     Series: DGS10 (US 10Y), FEDFUNDS, DEXJPUS (USD/JPY)
+    Series: IRSTCI01JPM156N (Japan call rate), IRLTLT01JPM156N (Japan 10Y JGB)
   - Yahoo Finance: yfinance library, ticker "JPY=X"
-  - BOJ: https://www.stat-search.boj.or.jp/ (public CSV)
 
 Each source falls back to mock data independently on failure.
 """
@@ -144,6 +144,53 @@ def _fetch_yahoo_fx() -> list[ExchangeRateDataPoint] | None:
         return None
 
 
+@cached("boj_rates")
+def _fetch_boj_rates() -> list[BojRateDataPoint] | None:
+    """Fetch Japan interest rates from FRED (OECD via FRED).
+
+    Series:
+      IRSTCI01JPM156N  — Immediate Rates: Call Money/Interbank Rate (policy rate proxy)
+      IRLTLT01JPM156N  — Long-Term Government Bond Yields: 10-Year (JGB 10Y)
+    """
+    api_key = os.getenv("FRED_API_KEY")
+    if not api_key:
+        logger.info("FRED_API_KEY not set — using mock BOJ rates")
+        return None
+    try:
+        from fredapi import Fred
+
+        fred = Fred(api_key=api_key)
+        end = datetime.now()
+        start = end - timedelta(days=365)
+        call_rate = fred.get_series(
+            "IRSTCI01JPM156N", observation_start=start, observation_end=end
+        )
+        jgb_10y = fred.get_series(
+            "IRLTLT01JPM156N", observation_start=start, observation_end=end
+        )
+
+        # Resample to monthly
+        call_m = call_rate.resample("MS").last().dropna()
+        jgb_m = jgb_10y.resample("MS").last().dropna()
+
+        results: list[BojRateDataPoint] = []
+        # Use JGB index as primary (more likely to have data)
+        for dt in jgb_m.index:
+            d_str = dt.strftime("%Y-%m-%d")
+            cr = call_m.get(dt)
+            results.append(
+                BojRateDataPoint(
+                    date=d_str,
+                    policy_rate=round(float(cr), 2) if cr is not None else None,
+                    jgb_10y_yield=round(float(jgb_m[dt]), 2),
+                )
+            )
+        return results if results else None
+    except Exception:
+        logger.exception("BOJ rates fetch failed (via FRED)")
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -157,8 +204,10 @@ async def get_rates() -> RatesResponse:
     if fred_rates is None:
         fred_rates = [FredRateDataPoint(**d) for d in _MOCK_FRED_RATES]
 
-    # BOJ rates — mock only for now
-    boj_rates = [BojRateDataPoint(**d) for d in _MOCK_BOJ_RATES]
+    # BOJ rates (via FRED)
+    boj_rates = _fetch_boj_rates()
+    if boj_rates is None:
+        boj_rates = [BojRateDataPoint(**d) for d in _MOCK_BOJ_RATES]
 
     # Yahoo Finance FX
     yahoo_fx = _fetch_yahoo_fx()
