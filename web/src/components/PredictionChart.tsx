@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   LineChart,
   Line,
@@ -8,8 +9,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { useApi } from "../hooks/useApi";
-import type { PredictionResponse } from "../types/api";
+import { STATIC_MODE, useApi } from "../hooks/useApi";
+import type { GdpGapMethod, PredictionResponse } from "../types/api";
 
 interface RateChartPoint {
   date: string;
@@ -21,6 +22,19 @@ interface FxChartPoint {
   date: string;
   actual: number | null;
   prediction: number | null;
+}
+
+const METHOD_LABEL: Record<GdpGapMethod, string> = {
+  cabinet_office: "内閣府公表",
+  average: "平均概念",
+  maximum: "最大概念",
+};
+
+function buildPredictionPath(method: GdpGapMethod): string {
+  if (STATIC_MODE) {
+    return `/prediction-${method}.json`;
+  }
+  return `/prediction?method=${method}`;
 }
 
 function splitRateData(data: PredictionResponse): RateChartPoint[] {
@@ -40,12 +54,40 @@ function splitFxData(data: PredictionResponse): FxChartPoint[] {
 }
 
 export function PredictionChart() {
-  const { data, loading, error } = useApi<PredictionResponse>("/prediction");
+  const [method, setMethod] = useState<GdpGapMethod>("maximum");
+  const path = buildPredictionPath(method);
+  const { data, loading, error } = useApi<PredictionResponse>(path);
+
+  const tabs: { key: GdpGapMethod; label: string }[] = [
+    { key: "cabinet_office", label: METHOD_LABEL.cabinet_office },
+    { key: "average", label: METHOD_LABEL.average },
+    { key: "maximum", label: METHOD_LABEL.maximum },
+  ];
+
+  const renderTabs = () => (
+    <div className="flex gap-1 mb-3 border-b border-gray-200">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          onClick={() => setMethod(t.key)}
+          className={
+            "px-3 py-1.5 text-xs font-medium border-b-2 -mb-px transition-colors " +
+            (method === t.key
+              ? "border-blue-600 text-blue-700"
+              : "border-transparent text-gray-500 hover:text-gray-800")
+          }
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
 
   if (loading) {
     return (
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-lg font-semibold mb-4">予測（IS-LMモデル）</h2>
+        {renderTabs()}
         <div className="h-64 flex items-center justify-center text-gray-400">
           読み込み中...
         </div>
@@ -57,6 +99,7 @@ export function PredictionChart() {
     return (
       <div className="bg-white rounded-lg shadow p-6">
         <h2 className="text-lg font-semibold mb-4">予測（IS-LMモデル）</h2>
+        {renderTabs()}
         <div className="h-64 flex items-center justify-center text-red-500">
           {error || "データの取得に失敗しました"}
         </div>
@@ -70,10 +113,12 @@ export function PredictionChart() {
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-lg font-semibold mb-1">予測（IS-LMモデル）</h2>
-      <p className="text-xs text-gray-500 mb-4">
-        モデル: {data.impact_prediction.model} / 乗数:{" "}
+      <p className="text-xs text-gray-500 mb-3">
+        ギャップ起点: {METHOD_LABEL[method]} / モデル:{" "}
+        {data.impact_prediction.model} / 乗数:{" "}
         {data.impact_prediction.assumptions.fiscal_multiplier}
       </p>
+      {renderTabs()}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-3 mb-4">

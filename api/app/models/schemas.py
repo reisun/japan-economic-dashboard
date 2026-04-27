@@ -33,6 +33,11 @@ class EstimatedGdpGap(BaseModel):
 
 class GdpGapResponse(BaseModel):
     cabinet_office: CabinetOfficeGdpGap
+    # 平均概念（HPフィルター）
+    estimated_average: EstimatedGdpGap
+    # 最大概念（直接推計; MVP=正残差75%タイル）
+    estimated_maximum: EstimatedGdpGap
+    # 後方互換エイリアス: estimated_average と同じ
     estimated: EstimatedGdpGap
 
 

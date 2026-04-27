@@ -11,18 +11,25 @@ export interface GdpGapEstimatedDataPoint {
   gdp_gap_percent: number;
 }
 
+export interface EstimatedGdpGapBlock {
+  data: GdpGapEstimatedDataPoint[];
+  method: string;
+  last_updated: string;
+}
+
 export interface GdpGapResponse {
   cabinet_office: {
     data: GdpGapDataPoint[];
     source: string;
     last_updated: string;
   };
-  estimated: {
-    data: GdpGapEstimatedDataPoint[];
-    method: string;
-    last_updated: string;
-  };
+  estimated_average: EstimatedGdpGapBlock;
+  estimated_maximum: EstimatedGdpGapBlock;
+  /** 後方互換エイリアス: estimated_average と同じ */
+  estimated: EstimatedGdpGapBlock;
 }
+
+export type GdpGapMethod = "cabinet_office" | "average" | "maximum";
 
 // Fund Demand types
 export interface FlowOfFundsDataPoint {

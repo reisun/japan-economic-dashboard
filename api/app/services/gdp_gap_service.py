@@ -95,9 +95,10 @@ def _hp_filter(y: np.ndarray, lamb: float = 1600.0) -> np.ndarray:
     return trend
 
 
-def _estimate_gdp_gap(
+def _estimate_gdp_gap_average(
     real_gdp: list[float], quarters: list[str]
 ) -> list[EstimatedGdpGapDataPoint]:
+    """平均概念のGDPギャップ。HPフィルターで潜在GDPを推計。"""
     y = np.array(real_gdp, dtype=float)
     potential = _hp_filter(y)
     results: list[EstimatedGdpGapDataPoint] = []
@@ -108,6 +109,53 @@ def _estimate_gdp_gap(
                 date=q,
                 real_gdp=round(float(y[i]), 1),
                 potential_gdp=round(float(potential[i]), 1),
+                gdp_gap_percent=gap_pct,
+            )
+        )
+    return results
+
+
+# 後方互換用エイリアス
+_estimate_gdp_gap = _estimate_gdp_gap_average
+
+
+# 最大概念のフォールバック・マークアップ（NOMINAL_GDP の 2%）
+_MAXIMUM_NOMINAL_GDP = 560.0
+_MAXIMUM_FALLBACK_RATIO = 0.02
+
+
+def _estimate_gdp_gap_maximum(
+    real_gdp: list[float], quarters: list[str]
+) -> list[EstimatedGdpGapDataPoint]:
+    """最大概念のGDPギャップ（MVP実装）。
+
+    HPフィルター・トレンドに対して、正残差（実績 - トレンド）の75パーセンタイルを
+    マークアップした水準を「最大概念の潜在GDP」として用いる。
+    正残差が存在しない場合は NOMINAL_GDP * 0.02 をフォールバックで使う。
+
+    NOTE: 本実装は MVP。本番運用では生産関数アプローチ
+        （資本ストック・労働投入の最大稼働 → 潜在GDP）への
+        差し替えポイント。具体的には _hp_filter / 75th-percentile マークアップを
+        Cobb-Douglas + TFP トレンド + 完全雇用労働投入での再計算に置換する。
+    """
+    y = np.array(real_gdp, dtype=float)
+    trend = _hp_filter(y)
+    residuals = y - trend
+    positive = residuals[residuals > 0]
+    if positive.size > 0:
+        markup = float(np.percentile(positive, 75))
+    else:
+        markup = _MAXIMUM_NOMINAL_GDP * _MAXIMUM_FALLBACK_RATIO
+    potential_max = trend + markup
+
+    results: list[EstimatedGdpGapDataPoint] = []
+    for i, q in enumerate(quarters):
+        gap_pct = round((y[i] - potential_max[i]) / potential_max[i] * 100, 2)
+        results.append(
+            EstimatedGdpGapDataPoint(
+                date=q,
+                real_gdp=round(float(y[i]), 1),
+                potential_gdp=round(float(potential_max[i]), 1),
                 gdp_gap_percent=gap_pct,
             )
         )
@@ -223,22 +271,33 @@ async def get_gdp_gap() -> GdpGapResponse:
     if boj_data is None:
         boj_data = [GdpGapDataPoint(**d) for d in _MOCK_CABINET_DATA]
 
-    # Real GDP -> HP-filter estimation
+    # Real GDP -> HP-filter estimation (平均概念) と 最大概念
     real_gdp_result = _fetch_real_gdp()
     try:
         if real_gdp_result is not None:
             gdp_values, quarters = real_gdp_result
-            estimated_data = _estimate_gdp_gap(gdp_values, quarters)
         else:
-            estimated_data = _estimate_gdp_gap(_MOCK_REAL_GDP, _QUARTERS)
+            gdp_values, quarters = _MOCK_REAL_GDP, _QUARTERS
+        average_data = _estimate_gdp_gap_average(gdp_values, quarters)
+        maximum_data = _estimate_gdp_gap_maximum(gdp_values, quarters)
     except Exception:
         logger.exception("HP filter estimation failed, using raw mock")
-        estimated_data = [
+        average_data = [
             EstimatedGdpGapDataPoint(
                 date=q, real_gdp=g, potential_gdp=g, gdp_gap_percent=0.0
             )
             for q, g in zip(_QUARTERS, _MOCK_REAL_GDP)
         ]
+        maximum_data = average_data
+
+    average = EstimatedGdpGap(
+        data=average_data, method="HP Filter (平均概念)", last_updated=today
+    )
+    maximum = EstimatedGdpGap(
+        data=maximum_data,
+        method="HP Filter + 75th-percentile markup (最大概念MVP)",
+        last_updated=today,
+    )
 
     return GdpGapResponse(
         cabinet_office=CabinetOfficeGdpGap(
@@ -246,5 +305,7 @@ async def get_gdp_gap() -> GdpGapResponse:
             source="日銀" if using_real_boj else "内閣府",
             last_updated=today,
         ),
-        estimated=EstimatedGdpGap(data=estimated_data, last_updated=today),
+        estimated_average=average,
+        estimated_maximum=maximum,
+        estimated=average,  # 後方互換エイリアス
     )
