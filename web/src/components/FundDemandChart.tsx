@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   LineChart,
   Line,
@@ -45,12 +46,34 @@ function mergeFlowData(data: FundDemandResponse): MergedFlowPoint[] {
     }
   }
 
-  return Array.from(map.values()).sort((a, b) =>
+  const sorted = Array.from(map.values()).sort((a, b) =>
     a.date.localeCompare(b.date)
   );
+
+  for (const point of sorted) {
+    const h = (point.households as number | null) ?? 0;
+    const c = (point.corporations as number | null) ?? 0;
+    const g = (point.government as number | null) ?? 0;
+    point.net = h + c + g;
+  }
+
+  return sorted;
 }
 
+const TOGGLE_ITEMS: { key: string; label: string; color: string }[] = [
+  { key: "households", label: "家計", color: SECTOR_COLORS.households },
+  { key: "corporations", label: "企業", color: SECTOR_COLORS.corporations },
+  { key: "government", label: "政府", color: SECTOR_COLORS.government },
+  { key: "net", label: "ネット合計", color: "#374151" },
+];
+
 export function FundDemandChart() {
+  const [visibleSectors, setVisibleSectors] = useState<Record<string, boolean>>({
+    households: true,
+    corporations: true,
+    government: true,
+    net: false,
+  });
   const { data, loading, error } = useApi<FundDemandResponse>("/fund-demand");
 
   if (loading) {
@@ -99,6 +122,28 @@ export function FundDemandChart() {
         <h3 className="text-sm font-medium text-gray-700 mb-2">
           セクター別 資金過不足
         </h3>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2">
+          {TOGGLE_ITEMS.map((item) => (
+            <label
+              key={item.key}
+              className="inline-flex items-center gap-1 text-xs cursor-pointer select-none"
+            >
+              <input
+                type="checkbox"
+                checked={visibleSectors[item.key] ?? false}
+                onChange={() =>
+                  setVisibleSectors((prev) => ({
+                    ...prev,
+                    [item.key]: !prev[item.key],
+                  }))
+                }
+                className="w-3 h-3"
+                style={{ accentColor: item.color }}
+              />
+              <span style={{ color: item.color }}>{item.label}</span>
+            </label>
+          ))}
+        </div>
         <ResponsiveContainer width="100%" height={200}>
           <LineChart data={flowData}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -112,18 +157,34 @@ export function FundDemandChart() {
             />
             <Legend />
             <ReferenceLine y={0} stroke="#999" strokeDasharray="3 3" />
-            {sectors.map((sector) => (
+            {sectors.map(
+              (sector) =>
+                visibleSectors[sector] && (
+                  <Line
+                    key={sector}
+                    type="monotone"
+                    dataKey={sector}
+                    name={SECTOR_LABELS[sector] || sector}
+                    stroke={SECTOR_COLORS[sector] || "#6b7280"}
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                  />
+                )
+            )}
+            {visibleSectors.net && (
               <Line
-                key={sector}
+                key="net"
                 type="monotone"
-                dataKey={sector}
-                name={SECTOR_LABELS[sector] || sector}
-                stroke={SECTOR_COLORS[sector] || "#6b7280"}
-                strokeWidth={2}
+                dataKey="net"
+                name="ネット合計"
+                stroke="#374151"
+                strokeWidth={2.5}
+                strokeDasharray="6 3"
                 dot={false}
                 connectNulls
               />
-            ))}
+            )}
           </LineChart>
         </ResponsiveContainer>
       </div>
