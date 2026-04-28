@@ -471,6 +471,39 @@ export function PredictionChart() {
         </ResponsiveContainer>
       </div>
 
+      {/* モデル仮定（collapsible） */}
+      <details className="mt-4 text-xs">
+        <summary className="cursor-pointer text-gray-500 hover:text-gray-700 select-none">
+          モデル仮定
+        </summary>
+        <div className="mt-2 bg-gray-50 border border-gray-200 rounded p-3 space-y-1 text-gray-600">
+          {data.impact_prediction.assumptions.fiscal_multiplier != null && (
+            <div>財政乗数: {data.impact_prediction.assumptions.fiscal_multiplier}</div>
+          )}
+          {data.impact_prediction.assumptions.money_demand_elasticity != null && (
+            <div>貨幣需要の利子弾力性: {data.impact_prediction.assumptions.money_demand_elasticity}</div>
+          )}
+          {data.impact_prediction.assumptions.investment_sensitivity != null && (
+            <div>投資の利子感応度: {data.impact_prediction.assumptions.investment_sensitivity}</div>
+          )}
+          {data.impact_prediction.assumptions.lag_order != null && (
+            <div>ラグ次数: {data.impact_prediction.assumptions.lag_order}</div>
+          )}
+          {data.impact_prediction.assumptions.n_obs != null && (
+            <div>観測数: {data.impact_prediction.assumptions.n_obs}</div>
+          )}
+          {data.impact_prediction.assumptions.n_steps != null && (
+            <div>予測ステップ数: {data.impact_prediction.assumptions.n_steps}</div>
+          )}
+          {data.impact_prediction.assumptions.variables && data.impact_prediction.assumptions.variables.length > 0 && (
+            <div>変数: {data.impact_prediction.assumptions.variables.join(", ")}</div>
+          )}
+          {data.current_gap.gdp_gap_trillion_yen != null && (
+            <div>名目GDPギャップ: {data.current_gap.gdp_gap_trillion_yen}兆円</div>
+          )}
+        </div>
+      </details>
+
       {engine === "var" && data.impact_prediction.irf && (
         <div className="mt-6 pt-4 border-t border-gray-200">
           <h3 className="text-sm font-medium text-gray-700 mb-1">

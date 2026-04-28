@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { useApi } from "../hooks/useApi";
 import type { InflationResponse } from "../types/api";
+import { DataStatusBadges } from "./DataStatusBadges";
 
 /**
  * インフレ率パネル: CPIコアコア / GDPデフレータ / 賃金上昇率（前年同期比%）。
@@ -68,7 +69,15 @@ export function InflationPanel() {
 
   return wrap(
     <>
-      <p className="text-xs text-gray-500 mb-2">出典: {data.source}</p>
+      <p className="text-xs text-gray-500 mb-1">出典: {data.source}</p>
+      <DataStatusBadges
+        status={data.data_status}
+        labels={{
+          gdp_deflator: "GDPデフレータ",
+          wage_growth: "賃金",
+          cpi_core_core: "CPIコアコア",
+        }}
+      />
       <div className="flex flex-wrap gap-2 mb-3">
         {card("CPIコアコア（生鮮食品・エネルギー除く）", latest.cpi_core_core, "#dc2626")}
         {card("GDPデフレータ", latest.gdp_deflator, "#2563eb")}

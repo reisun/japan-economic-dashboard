@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { useApi } from "../hooks/useApi";
 import type { GdpGapMethod, GdpGapResponse } from "../types/api";
+import { DataStatusBadges } from "./DataStatusBadges";
 
 interface ChartPoint {
   date: string;
@@ -142,7 +143,16 @@ export function GdpGapChart({ method: methodProp, onMethodChange }: GdpGapChartP
       <h2 className="text-lg font-semibold mb-1">GDPギャップ</h2>
       <p className="text-xs text-gray-500 mb-3">{METHOD_DESC[method]}</p>
       {renderTabs()}
-      <p className="text-xs text-gray-500 mb-2">{sourceLabel}</p>
+      <p className="text-xs text-gray-500 mb-1">{sourceLabel}</p>
+      <div className="mb-2">
+        <DataStatusBadges
+          status={data.data_status}
+          labels={{
+            boj_output_gap: "日銀GDPギャップ",
+            fred_real_gdp: "実質GDP(FRED)",
+          }}
+        />
+      </div>
       <ResponsiveContainer width="100%" height={280}>
         <LineChart data={series}>
           <CartesianGrid strokeDasharray="3 3" />
@@ -165,6 +175,21 @@ export function GdpGapChart({ method: methodProp, onMethodChange }: GdpGapChartP
           />
         </LineChart>
       </ResponsiveContainer>
+      {method === "average" && (
+        <p className="text-xs text-gray-400 mt-2">
+          HP filter {"λ"}=1600 ※端点問題あり（直近ほど推計が不安定）
+        </p>
+      )}
+      {method === "maximum" && (
+        <p className="text-xs text-gray-400 mt-2">
+          NAIRU=2.5%, 資本稼働率=0.95, Cobb-Douglas {"α"}=1/3
+        </p>
+      )}
+      {method === "civilian" && (
+        <p className="text-xs text-gray-400 mt-2">
+          16四半期ローリングピーク, ショック閾値=5%
+        </p>
+      )}
     </div>
   );
 }

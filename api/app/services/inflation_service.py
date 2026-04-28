@@ -382,4 +382,5 @@ async def get_inflation() -> InflationResponse:
         source=source,
         boj_target=2.0,
         last_updated=today,
+        data_status=status,
     )

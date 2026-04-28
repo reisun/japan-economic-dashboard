@@ -407,4 +407,5 @@ async def get_fund_demand() -> FundDemandResponse:
     return FundDemandResponse(
         flow_of_funds=FlowOfFunds(data=flow_data),
         bank_lending=BankLending(data=lending_data),
+        data_status=status,
     )

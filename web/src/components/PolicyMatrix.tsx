@@ -332,6 +332,10 @@ export function PolicyMatrix({ method }: PolicyMatrixProps) {
         <div>← {spec.leftLabel}</div>
         <div className="text-right">{spec.rightLabel} →</div>
       </div>
+      <p className="mt-2 text-xs text-gray-400">
+        判定基準: GDPギャップ {spec.gapThreshold >= 0 ? "+" : ""}{spec.gapThreshold.toFixed(1)}%,
+        インフレ率 {inflThreshold.toFixed(1)}%（日銀目標）
+      </p>
     </>,
   );
 }
