@@ -26,9 +26,10 @@ import type { GdpGapMethod, GdpGapResponse, InflationResponse } from "../types/a
  *   - maximum        (CBO生産関数・最大概念):   -1.0% 完全雇用近接 vs 余地あり
  *                       NAIRU=2.5% 前提の CBO methodology で典型的に観測される
  *                       「ほぼ完全雇用」域のギャップ水準を目安とする
- *   - civilian       (在野試算・最大概念寄り):  -2.0% 完全雇用近接 vs 余地大
+ *   - civilian       (在野試算・最大概念寄り):  -1.0% 完全雇用近接 vs 余地大
  *                       高橋洋一・三橋貴明・藤井聡らの試算で、
- *                       インフレ目標到達直前に観測される水準の目安
+ *                       実績GDPのピーク包絡トレンドに対するギャップが
+ *                       概ね 0%〜-2% の範囲を取るため、-1.0% で二分する
  *
  * ## 象限の政策スタンス（系統で意味が変わる）
  *
@@ -158,12 +159,13 @@ const MATRIX_SPECS: Record<GdpGapMethod, MatrixSpec> = {
     quadrants: MAXIMUM_CONCEPT_QUADRANTS,
   },
   civilian: {
-    // 在野試算（高橋洋一・三橋貴明・藤井聡 等）はより大きいデフレギャップを示す傾向。
-    // インフレ目標到達直前の水準を -2.0% を目安とする。
-    gapThreshold: -2.0,
+    // 在野試算（高橋洋一氏方式ピーク・トゥ・ピーク）のギャップは概ね 0%〜-2% の
+    // 狭いレンジに収まる。-2.0% だと全期間「完全雇用近接」になりマトリクスが破綻
+    // するため、データレンジを二分する -1.0% を閾値とする。
+    gapThreshold: -1.0,
     conceptLabel: "最大概念（在野試算）",
-    rightLabel: "完全雇用近接（ギャップ>-2.0%）",
-    leftLabel: "余地大（ギャップ<-2.0%）",
+    rightLabel: "完全雇用近接（ギャップ>-1.0%）",
+    leftLabel: "余地大（ギャップ<-1.0%）",
     quadrants: MAXIMUM_CONCEPT_QUADRANTS,
   },
 };
