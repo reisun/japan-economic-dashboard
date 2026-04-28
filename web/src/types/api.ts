@@ -138,6 +138,11 @@ export interface PredictionResponse {
       money_demand_elasticity?: number | null;
       investment_sensitivity?: number | null;
       fiscal_multiplier?: number | null;
+      nominal_gdp_trillion_yen?: number | null;
+      uip_sensitivity?: number | null;
+      baseline_jgb_10y?: number | null;
+      baseline_usdjpy?: number | null;
+      zlb_binding?: boolean | null;
       lag_order?: number | null;
       n_obs?: number | null;
       n_steps?: number | null;
