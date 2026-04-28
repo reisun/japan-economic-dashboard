@@ -587,6 +587,9 @@ export function PredictionChart() {
           {data.impact_prediction.assumptions.investment_sensitivity != null && (
             <div>投資の利子感応度: {data.impact_prediction.assumptions.investment_sensitivity}</div>
           )}
+          {data.impact_prediction.assumptions.uip_sensitivity != null && (
+            <div>UIP感応度: {data.impact_prediction.assumptions.uip_sensitivity} 円/pp</div>
+          )}
           {data.impact_prediction.assumptions.baseline_jgb_10y != null && (
             <div>ベースライン金利（JGB 10Y）: {data.impact_prediction.assumptions.baseline_jgb_10y}%</div>
           )}
