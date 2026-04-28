@@ -145,6 +145,7 @@ class Assumptions(BaseModel):
     money_demand_elasticity: float | None = None
     investment_sensitivity: float | None = None
     fiscal_multiplier: float | None = None
+    nominal_gdp_trillion_yen: float | None = None
     # 統計モデル用パラメータ
     lag_order: int | None = None
     n_obs: int | None = None

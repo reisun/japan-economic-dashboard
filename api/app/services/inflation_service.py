@@ -14,10 +14,13 @@ CPI 指標選定について:
 データソース（実データ取得）:
   - GDPデフレータ: FRED `NGDPDSAIXJPQ` (Gross Domestic Product Deflator for
       Japan, Quarterly) → 前年同期比%。OECD経由で内閣府SNAデータが反映される。
-  - 名目賃金: FRED `LCEAMN01JPM659S` (Labor Compensation: Earnings:
-      Manufacturing: Hourly for Japan, Monthly, Growth rate same period
-      previous year) → 月次 YoY を四半期平均化。
-      製造業ベースだが、毎月勤労統計の現金給与総額YoYと近似的に連動。
+  - 名目賃金（優先順）:
+      A) e-Stat API（毎月勤労統計 現金給与総額 調査産業計 事業所規模5人以上）
+         統計表ID: 0003138248 → 対前年同月増減率を月次取得 → 四半期平均化。
+         全産業ベースで日本経済の賃金動向をより適切に反映する。
+      B) FRED `LCEAMN01JPM659S` (Labor Compensation: Earnings:
+         Manufacturing: Hourly for Japan, Monthly, Growth rate same period
+         previous year) → 月次 YoY を四半期平均化。製造業ベース（フォールバック）。
   - CPI コアコア（生鮮食品及びエネルギー除く総合・前年同月比%）:
       FRED の Japan core CPI (CPGRLE01JPM659N 等) は 2021年6月で discontinued。
       A) e-Stat API（要 ESTAT_APP_ID）→ B) 総務省統計局CSV直接取得 の順で試行し、
@@ -84,14 +87,126 @@ def _fetch_gdp_deflator_yoy() -> dict[str, float] | None:
     return yoy_pct_quarterly(series)
 
 
-@cached("fred_wage_growth_yoy")
-def _fetch_wage_growth_yoy() -> dict[str, float] | None:
-    """名目賃金前年同期比%を FRED から取得（製造業時給 YoY を四半期平均化）。"""
-    series = fetch_fred_series("LCEAMN01JPM659S", years=6)
-    if series is None:
+# ---------------------------------------------------------------------------
+# 名目賃金（毎月勤労統計 現金給与総額 調査産業計）前年同月比%
+#   優先順位:
+#     A. e-Stat API (要 ESTAT_APP_ID 環境変数)
+#        統計表ID: 0003138248 (毎月勤労統計 全国調査 年報 産業別賃金指数 月次 2011年～)
+#        対象系列: 現金給与総額 調査産業計(TL) 事業所規模5人以上(T) 対前年同月増減率(3007)
+#     B. FRED `LCEAMN01JPM659S` (製造業時給 YoY, フォールバック)
+# ---------------------------------------------------------------------------
+
+# e-Stat 統計表ID（毎月勤労統計 年報 賃金指数 月次 2011年～）。環境変数で上書き可。
+_ESTAT_WAGE_STATS_DATA_ID_DEFAULT = "0003138248"
+
+
+def _estat_extract_wage_yoy(payload: dict) -> dict[str, float]:
+    """e-Stat getStatsData レスポンスから賃金前年同月比%の月次辞書を抽出。
+
+    リクエスト時にサーバーサイドフィルタ (cdTab/cdCat01/cdCat03) を適用済みのため、
+    VALUE 配列は対象系列のみ。@time と $ を抽出するだけで良い。
+
+    e-Stat time コード形式: "YYYYMMDD__" (例: "2014001212" = 2014年12月)
+    → 位置 6-7 が月。
+    """
+    try:
+        sd = payload["GET_STATS_DATA"]["STATISTICAL_DATA"]
+        values = sd.get("DATA_INF", {}).get("VALUE", [])
+        if isinstance(values, dict):
+            values = [values]
+        if not values:
+            return {}
+
+        out: dict[str, float] = {}
+        for v in values:
+            time_code = str(v.get("@time", ""))
+            m = re.match(r"^(\d{4})\d{2}(\d{2})\d{2}$", time_code)
+            if not m:
+                continue
+            year = int(m.group(1))
+            month = int(m.group(2))
+            if not (1 <= month <= 12):
+                continue
+            try:
+                val = float(v.get("$"))
+            except (TypeError, ValueError):
+                continue
+            out[f"{year:04d}-{month:02d}"] = val
+        return out
+    except Exception:
+        logger.exception("e-Stat 賃金レスポンスのパースに失敗")
+        return {}
+
+
+def _fetch_wage_growth_via_estat() -> dict[str, float] | None:
+    """e-Stat API 経由で名目賃金前年同月比% (月次) を取得。
+
+    毎月勤労統計 現金給与総額 調査産業計 事業所規模5人以上 の対前年同月増減率を取得する。
+    全産業ベースのため、製造業のみの FRED 系列より日本経済の賃金動向を適切に反映する。
+    """
+    import os as _os
+
+    stats_data_id = _os.getenv(
+        "ESTAT_WAGE_STATS_DATA_ID", _ESTAT_WAGE_STATS_DATA_ID_DEFAULT
+    )
+    payload = fetch_estat_stats_data(
+        stats_data_id,
+        extra_params={
+            "cdTab": "3007",    # 対前年同月増減率
+            "cdCat01": "TL",    # 調査産業計
+            "cdCat03": "T",     # 事業所規模5人以上
+            "cdArea": "00000",  # 全国
+        },
+    )
+    if payload is None:
         return None
-    quarterly = quarterize_monthly(series, how="mean")
-    return to_quarter_labelled(quarterly)
+    monthly = _estat_extract_wage_yoy(payload)
+    if not monthly:
+        logger.warning("e-Stat: 名目賃金前年同月比の抽出に失敗")
+        return None
+    logger.info("e-Stat wage YoY: %d months fetched", len(monthly))
+    return monthly
+
+
+_wage_source: str = "fred"  # モジュールレベルで最後に使用したソースを記録
+
+
+@cached("wage_growth_yoy")
+def _fetch_wage_growth_yoy() -> dict[str, float] | None:
+    """名目賃金前年同期比%を取得し四半期平均で返す。
+
+    A: e-Stat 毎月勤労統計（全産業） → B: FRED（製造業, フォールバック）。
+    """
+    global _wage_source
+
+    # A: e-Stat 毎月勤労統計
+    monthly = _fetch_wage_growth_via_estat()
+    if monthly is not None:
+        # Freshness check: if the latest data point is more than 2 years old,
+        # the e-Stat table is likely discontinued/stale. Fall back to FRED.
+        latest_ym = max(monthly.keys()) if monthly else ""
+        cutoff_year = date.today().year - 2
+        cutoff_ym = f"{cutoff_year:04d}-01"
+        if latest_ym >= cutoff_ym:
+            quarterly = monthly_dict_to_quarterly_mean(monthly)
+            if quarterly:
+                logger.info("wage growth via e-Stat: %d quarters", len(quarterly))
+                _wage_source = "estat"
+                return quarterly
+        else:
+            logger.info(
+                "e-Stat wage data is stale (latest=%s, cutoff=%s), falling back to FRED",
+                latest_ym,
+                cutoff_ym,
+            )
+
+    # B: FRED (manufacturing, fallback)
+    _wage_source = "fred"
+    series = fetch_fred_series("LCEAMN01JPM659S", years=6)
+    if series is not None:
+        quarterly = quarterize_monthly(series, how="mean")
+        return to_quarter_labelled(quarterly)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -369,10 +484,12 @@ async def get_inflation() -> InflationResponse:
 
     has_real = any(v == "real" for v in status.values())
     suffix = "" if has_real else "（モック）"
+    wage_via = "e-Stat" if _wage_source == "estat" else "FRED"
+    wage_scope = "全産業" if _wage_source == "estat" else "製造業"
     source = (
         f"総務省CPI（コアコア）[{status['cpi_core_core']}] / "
         f"内閣府GDPデフレータ via FRED [{status['gdp_deflator']}] / "
-        f"厚労省毎月勤労統計 via FRED [{status['wage_growth']}]{suffix}"
+        f"厚労省毎月勤労統計（{wage_scope}）via {wage_via} [{status['wage_growth']}]{suffix}"
     )
 
     points = [InflationDataPoint(**d) for d in raw]

@@ -8,6 +8,7 @@ Model overview:
   5. Interest rate differential → exchange rate via UIP (uncovered interest parity)
 
 All parameters are defined as constants for easy future adjustment.
+Nominal GDP is fetched dynamically from FRED (JPNNGDP) with a static fallback.
 """
 
 from __future__ import annotations
@@ -24,6 +25,8 @@ from app.models.schemas import (
     PredictionResponse,
     RequiredFiscalSpending,
 )
+from app.services.cache import cached
+from app.services.data_utils import fetch_fred_series
 from app.services.gdp_gap_service import get_gdp_gap
 
 logger = logging.getLogger(__name__)
@@ -41,8 +44,33 @@ MONEY_DEMAND_ELASTICITY = 0.5
 # Investment sensitivity to interest rate (IS slope parameter)
 INVESTMENT_SENSITIVITY = 0.3
 
-# Nominal GDP (trillion yen, approximate)
-NOMINAL_GDP = 560.0
+# Nominal GDP fallback (trillion yen)
+_NOMINAL_GDP_FALLBACK = 560.0
+
+
+@cached("nominal_gdp_trillion")
+def _get_nominal_gdp() -> float:
+    """Fetch latest Japan nominal GDP (trillion yen) from FRED.
+
+    FRED series JPNNGDP: quarterly, seasonally adjusted annual rate,
+    in billions of yen. Divide by 1000 to convert to trillions.
+    Falls back to the static constant if fetch fails.
+    """
+    series = fetch_fred_series("JPNNGDP", years=2)
+    if series is not None and len(series) > 0:
+        latest_billion = float(series.iloc[-1])
+        latest_trillion = round(latest_billion / 1000.0, 1)
+        logger.info(
+            "Nominal GDP from FRED: %.1f trillion yen (latest: %s)",
+            latest_trillion,
+            series.index[-1].date(),
+        )
+        return latest_trillion
+    logger.info(
+        "Nominal GDP: FRED fetch failed, using fallback %.1f trillion yen",
+        _NOMINAL_GDP_FALLBACK,
+    )
+    return _NOMINAL_GDP_FALLBACK
 
 # Current baseline interest rates
 BASELINE_JGB_10Y = 0.85  # percent
@@ -83,6 +111,7 @@ def _build_prediction_quarters() -> list[str]:
 def _compute_is_lm_impact(
     fiscal_spending_trillion: float,
     n_quarters: int,
+    nominal_gdp: float,
 ) -> tuple[list[float], list[float]]:
     """Compute predicted interest rates and exchange rates per quarter.
 
@@ -96,7 +125,7 @@ def _compute_is_lm_impact(
         * FISCAL_MULTIPLIER
         * MONEY_DEMAND_ELASTICITY
         / (INVESTMENT_SENSITIVITY + MONEY_DEMAND_ELASTICITY)
-        / NOMINAL_GDP
+        / nominal_gdp
         * 100
     )
 
@@ -168,6 +197,9 @@ async def get_prediction(
     if method not in VALID_METHODS:
         method = "maximum"
 
+    # Fetch dynamic nominal GDP
+    nominal_gdp = _get_nominal_gdp()
+
     # Get latest GDP gap estimate
     try:
         gdp_gap_data = await get_gdp_gap()
@@ -180,7 +212,7 @@ async def get_prediction(
             gap_pct = gdp_gap_data.estimated_civilian.data[-1].gdp_gap_percent
         else:  # maximum
             gap_pct = gdp_gap_data.estimated_maximum.data[-1].gdp_gap_percent
-        gap_trillion = round(gap_pct / 100.0 * NOMINAL_GDP, 1)
+        gap_trillion = round(gap_pct / 100.0 * nominal_gdp, 1)
     except Exception:
         logger.exception("Failed to get GDP gap for prediction, using defaults")
         gap_pct = -2.5
@@ -202,7 +234,9 @@ async def get_prediction(
 
     # IS-LM impact
     quarters = _build_prediction_quarters()
-    jgb_rates, usdjpy_rates = _compute_is_lm_impact(required_spending, len(quarters))
+    jgb_rates, usdjpy_rates = _compute_is_lm_impact(
+        required_spending, len(quarters), nominal_gdp
+    )
 
     # Build prediction arrays
     interest_predictions = [
@@ -246,6 +280,7 @@ async def get_prediction(
                 money_demand_elasticity=MONEY_DEMAND_ELASTICITY,
                 investment_sensitivity=INVESTMENT_SENSITIVITY,
                 fiscal_multiplier=FISCAL_MULTIPLIER,
+                nominal_gdp_trillion_yen=nominal_gdp,
             ),
         ),
     )

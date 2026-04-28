@@ -42,6 +42,7 @@ from app.models.schemas import (
 )
 from app.services.gdp_gap_service import get_gdp_gap
 from app.services.inflation_service import get_inflation
+from app.services.prediction_service import _get_nominal_gdp
 from app.services.rates_service import get_rates
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,6 @@ logger = logging.getLogger(__name__)
 
 VAR_LAG_ORDER = 4
 PREDICTION_STEPS = 8  # 予測四半期数
-NOMINAL_GDP = 560.0  # 兆円（IS-LM と共通）
 FISCAL_MULTIPLIER = 1.0
 VARIABLE_NAMES = ["gdp_gap", "jgb_10y", "usdjpy", "cpi_core_core"]
 
@@ -414,7 +414,8 @@ async def get_var_prediction(
     # 直近観測値（GDPギャップ %, JGB %, USDJPY, CPI %）
     last_obs = Y[-1]
     gap_pct = float(last_obs[0])
-    gap_trillion = round(gap_pct / 100.0 * NOMINAL_GDP, 1)
+    nominal_gdp = _get_nominal_gdp()
+    gap_trillion = round(gap_pct / 100.0 * nominal_gdp, 1)
 
     # 必要財政支出（auto）
     auto_required_spending = -gap_trillion / FISCAL_MULTIPLIER
@@ -426,8 +427,8 @@ async def get_var_prediction(
         scenario_mode = "auto"
 
     # 財政ショック → GDPギャップショック（兆円 → ％ポイント）。
-    # +1兆円の財政拡張 ≈ 乗数1で +(1/NOMINAL_GDP)*100 = 約0.18%pt のギャップ拡大。
-    shock_gap_pct = required_spending / NOMINAL_GDP * 100.0 * FISCAL_MULTIPLIER
+    # +1兆円の財政拡張 ≈ 乗数1で +(1/nominal_gdp)*100 のギャップ拡大。
+    shock_gap_pct = required_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
     shock_vec = np.zeros(k)
     shock_vec[0] = shock_gap_pct
     shock_response = _compute_irf(A, PREDICTION_STEPS - 1, shock_vec)
@@ -468,7 +469,7 @@ async def get_var_prediction(
 
     # IRF（+1兆円の財政拡張ショック → 各変数）
     unit_shock = np.zeros(k)
-    unit_shock[0] = 1.0 / NOMINAL_GDP * 100.0  # +1兆円相当のGDPギャップショック
+    unit_shock[0] = 1.0 / nominal_gdp * 100.0  # +1兆円相当のGDPギャップショック
     irf_arr = _compute_irf(A, PREDICTION_STEPS, unit_shock)
     irf_points = [
         IrfPoint(
@@ -568,9 +569,10 @@ async def get_ar1_prediction(
     quarters, Y = await _build_panel(method)
     T, k = Y.shape
 
+    nominal_gdp = _get_nominal_gdp()
     last_obs = Y[-1].copy()
     gap_pct = float(last_obs[0])
-    gap_trillion = round(gap_pct / 100.0 * NOMINAL_GDP, 1)
+    gap_trillion = round(gap_pct / 100.0 * nominal_gdp, 1)
 
     auto_required_spending = -gap_trillion / FISCAL_MULTIPLIER
     if fiscal_spending_trillion is not None:
@@ -581,7 +583,7 @@ async def get_ar1_prediction(
         scenario_mode = "auto"
 
     # ショック反映: GDPギャップを直接シフト（同時期に乗数効果が及ぶと仮定）
-    shock_gap_pct = required_spending / NOMINAL_GDP * 100.0 * FISCAL_MULTIPLIER
+    shock_gap_pct = required_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
     last_shocked = last_obs.copy()
     last_shocked[0] = last_obs[0] + shock_gap_pct
 
