@@ -29,6 +29,7 @@ export interface GdpGapResponse {
   estimated_civilian: EstimatedGdpGapBlock;
   /** 後方互換エイリアス: estimated_average と同じ */
   estimated: EstimatedGdpGapBlock;
+  data_status?: Record<string, string>;
 }
 
 export type GdpGapMethod = "cabinet_office" | "average" | "maximum" | "civilian";
@@ -57,6 +58,7 @@ export interface FundDemandResponse {
     source: string;
     unit: string;
   };
+  data_status?: Record<string, string>;
 }
 
 // Rates types
@@ -86,6 +88,7 @@ export interface RatesResponse {
     yahoo_finance: ExchangeRateDataPoint[];
     fred: ExchangeRateDataPoint[];
   };
+  data_status?: Record<string, string>;
 }
 
 // Prediction types
@@ -158,6 +161,7 @@ export interface InflationResponse {
   source: string;
   boj_target: number;
   last_updated: string;
+  data_status?: Record<string, string>;
 }
 
 // Common types

@@ -41,6 +41,7 @@ class GdpGapResponse(BaseModel):
     estimated_civilian: EstimatedGdpGap
     # 後方互換エイリアス: estimated_average と同じ
     estimated: EstimatedGdpGap
+    data_status: dict[str, str] | None = None
 
 
 # ---------- Fund Demand ----------
@@ -72,6 +73,7 @@ class BankLending(BaseModel):
 class FundDemandResponse(BaseModel):
     flow_of_funds: FlowOfFunds
     bank_lending: BankLending
+    data_status: dict[str, str] | None = None
 
 
 # ---------- Rates ----------
@@ -106,6 +108,7 @@ class ExchangeRates(BaseModel):
 class RatesResponse(BaseModel):
     interest_rates: InterestRates
     exchange_rates: ExchangeRates
+    data_status: dict[str, str] | None = None
 
 
 # ---------- Prediction ----------
@@ -198,6 +201,7 @@ class InflationResponse(BaseModel):
     source: str = "総務省CPI（コアコア） / 内閣府GDPデフレータ / 厚労省毎月勤労統計（モック）"
     boj_target: float = 2.0              # 日銀インフレ目標 2%
     last_updated: str
+    data_status: dict[str, str] | None = None
 
 
 # ---------- Health ----------

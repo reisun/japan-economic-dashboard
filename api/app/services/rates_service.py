@@ -278,4 +278,5 @@ async def get_rates() -> RatesResponse:
     return RatesResponse(
         interest_rates=InterestRates(fred=fred_rates, boj=boj_rates),
         exchange_rates=ExchangeRates(yahoo_finance=yahoo_fx, fred=fred_fx),
+        data_status=status,
     )

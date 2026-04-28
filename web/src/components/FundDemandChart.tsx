@@ -11,6 +11,7 @@ import {
 } from "recharts";
 import { useApi } from "../hooks/useApi";
 import type { FundDemandResponse } from "../types/api";
+import { DataStatusBadges } from "./DataStatusBadges";
 
 const SECTOR_LABELS: Record<string, string> = {
   households: "家計",
@@ -80,10 +81,19 @@ export function FundDemandChart() {
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-lg font-semibold mb-1">資金需要</h2>
-      <p className="text-xs text-gray-500 mb-4">
+      <p className="text-xs text-gray-500 mb-1">
         出典: {data.flow_of_funds.source} / {data.bank_lending.source}
         （単位: {data.flow_of_funds.unit}）
       </p>
+      <div className="mb-3">
+        <DataStatusBadges
+          status={data.data_status}
+          labels={{
+            flow_of_funds: "資金循環",
+            bank_lending: "銀行貸出",
+          }}
+        />
+      </div>
 
       <div className="mb-4">
         <h3 className="text-sm font-medium text-gray-700 mb-2">

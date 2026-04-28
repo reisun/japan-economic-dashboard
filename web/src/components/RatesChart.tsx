@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import { useApi } from "../hooks/useApi";
 import type { RatesResponse } from "../types/api";
+import { DataStatusBadges } from "./DataStatusBadges";
 
 interface MergedRatePoint {
   date: string;
@@ -104,9 +105,20 @@ export function RatesChart() {
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-lg font-semibold mb-1">金利・為替</h2>
-      <p className="text-xs text-gray-500 mb-4">
+      <p className="text-xs text-gray-500 mb-1">
         出典: FRED / 日銀 / Yahoo Finance
       </p>
+      <div className="mb-3">
+        <DataStatusBadges
+          status={data.data_status}
+          labels={{
+            fred_rates: "米金利(FRED)",
+            boj_rates: "日本金利",
+            yahoo_fx: "為替(Yahoo)",
+            fred_fx: "為替(FRED)",
+          }}
+        />
+      </div>
 
       <div className="mb-4">
         <h3 className="text-sm font-medium text-gray-700 mb-2">金利</h3>

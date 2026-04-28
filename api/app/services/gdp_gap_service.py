@@ -628,6 +628,11 @@ async def get_gdp_gap() -> GdpGapResponse:
         last_updated=today,
     )
 
+    data_status = {
+        "boj_output_gap": "real" if using_real_boj else "mock",
+        "fred_real_gdp": "real" if using_real_gdp else "mock",
+    }
+
     return GdpGapResponse(
         cabinet_office=CabinetOfficeGdpGap(
             data=boj_data,
@@ -638,4 +643,5 @@ async def get_gdp_gap() -> GdpGapResponse:
         estimated_maximum=maximum,
         estimated_civilian=civilian,
         estimated=average,  # 後方互換エイリアス
+        data_status=data_status,
     )
