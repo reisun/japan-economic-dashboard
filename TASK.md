@@ -25,4 +25,28 @@
 - [x] Recharts chunk分割（vite `manualChunks` で recharts を独立 chunk 化、initial JS を 567kB→30kB に削減、ビルドサイズ警告解消; `chunkSizeWarningLimit: 700` で recharts 自体の警告を抑制）
 - [x] reverse-proxy への統合（reverse-proxy 統合は完了済（`~/workspace/reverse-proxy/nginx/nginx.conf` に `/japan-economic-dashboard/api/` ルーティング、`japan-economic-dashboard-net` 経由で upstream `japan-economic-dashboard-api:8000` に到達）。外部 URL `https://reisun.asuscomm.com/japan-economic-dashboard/api/v1/*` で health / gdp-gap / inflation / prediction が HTTP 200 応答を実機確認。CORS は FastAPI 側で `https://reisun.github.io` を許可済。本番デプロイ構成と nginx 抜粋を README.md に追記。）
 
-## Backlog
+## Backlog（優先順）
+
+### P1: 機能バグ・データ正確性
+- [x] PolicyMatrix が最新の非null値を使い、データ日付を表示（PR #27）
+- [x] e-Stat CPI コアコア前年同月比の取得失敗を修正（PR #26）
+- [x] 賃金指標を毎月勤労統計（全産業）に変更（e-Stat → FRED 製造業のフォールバック構造。現在 e-Stat データが2014年止まりのため FRED にフォールバック中）（PR #30）
+
+### P2: 信頼性・透明性
+- [x] モック/実データの区別をUIに表示（全エンドポイントに data_status 追加、DataStatusBadges コンポーネント）（PR #29）
+- [x] パラメータの透明性（PredictionChart に折りたたみ式仮定表示、GdpGapChart に手法別注記、PolicyMatrix に閾値表示）（PR #29）
+- [x] 在野試算の PolicyMatrix 閾値を -2.0% → -1.0% に修正（実データで検証、全データが旧閾値の片側に偏っていた）（PR #28）
+
+### P3: モデル改善
+- [x] IS-LM の名目GDP を FRED JPNNGDP から動的取得（560兆円→671.6兆円、全エンジン対応）（PR #30）
+- [ ] IS-LM にゼロ金利制約（流動性の罠）を追加
+- [ ] UIP 感応度を直近の金利差・為替データから動的推定、またはUIで調整可能に
+
+### P4: UX改善
+- [ ] 資金需要チャートに系列の表示/非表示トグル、ネット資金需要の集約表示を追加
+- [x] HP Filter の端点問題の注意書きをUIに追加（GdpGapChart の平均概念タブ）（PR #29）
+
+### 将来検討
+- VARモデルのサンプルサイズ問題（80観測にパラメータ68個、過学習リスク）の注意表示
+- 共通期間フィルターで最短データに引きずられ情報が失われる問題の改善
+- アクション指向の強化（Policy Matrix の4象限に具体的な政策提言テキストを追加等）
