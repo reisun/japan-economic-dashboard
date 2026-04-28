@@ -146,6 +146,12 @@ class Assumptions(BaseModel):
     investment_sensitivity: float | None = None
     fiscal_multiplier: float | None = None
     nominal_gdp_trillion_yen: float | None = None
+    uip_sensitivity: float | None = None
+    # ベースライン金利（動的取得）
+    baseline_jgb_10y: float | None = None
+    baseline_usdjpy: float | None = None
+    # ゼロ金利制約
+    zlb_binding: bool | None = None
     # 統計モデル用パラメータ
     lag_order: int | None = None
     n_obs: int | None = None

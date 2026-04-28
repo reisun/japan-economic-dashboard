@@ -53,10 +53,17 @@ const SCENARIO_MAX = 200;
 const SCENARIO_STEP = 0.5;
 const DEBOUNCE_MS = 500;
 
+// UIP感応度の範囲
+const UIP_MIN = 0;
+const UIP_MAX = 10;
+const UIP_STEP = 0.5;
+const UIP_DEFAULT = 2.0;
+
 function buildPredictionPath(
   method: GdpGapMethod,
   scenario: number | null,
   engine: PredictionEngine,
+  uipSensitivity: number | null = null,
 ): string {
   if (STATIC_MODE) {
     // 静的モード: prediction-<method>-<engine>.json を返す（IS-LM は後方互換のため
@@ -71,6 +78,9 @@ function buildPredictionPath(
   params.set("engine", engine);
   if (scenario !== null && !Number.isNaN(scenario)) {
     params.set("fiscal_spending_trillion", String(scenario));
+  }
+  if (uipSensitivity !== null && !Number.isNaN(uipSensitivity)) {
+    params.set("uip_sensitivity", String(uipSensitivity));
   }
   return `/prediction?${params.toString()}`;
 }
@@ -109,6 +119,10 @@ export function PredictionChart() {
   // <input> のテキスト表現（途中入力で "" や "-" を許容するため文字列を別管理）
   const [scenarioText, setScenarioText] = useState<string>("");
 
+  // UIP感応度（null=デフォルト値を使用）
+  const [uipInput, setUipInput] = useState<number | null>(null);
+  const [debouncedUip, setDebouncedUip] = useState<number | null>(null);
+
   // debounce: scenarioInput → debouncedScenario
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -123,14 +137,30 @@ export function PredictionChart() {
     };
   }, [scenarioInput]);
 
+  // debounce: uipInput → debouncedUip
+  const uipDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (uipDebounceRef.current) {
+      clearTimeout(uipDebounceRef.current);
+    }
+    uipDebounceRef.current = setTimeout(() => {
+      setDebouncedUip(uipInput);
+    }, DEBOUNCE_MS);
+    return () => {
+      if (uipDebounceRef.current) clearTimeout(uipDebounceRef.current);
+    };
+  }, [uipInput]);
+
   // method / engine 切替時はシナリオを自動に戻す
   useEffect(() => {
     setScenarioInput(null);
     setScenarioText("");
     setDebouncedScenario(null);
+    setUipInput(null);
+    setDebouncedUip(null);
   }, [method, engine]);
 
-  const path = buildPredictionPath(method, debouncedScenario, engine);
+  const path = buildPredictionPath(method, debouncedScenario, engine, debouncedUip);
   const { data, loading, error } = useApi<PredictionResponse>(path);
 
   const tabs: { key: GdpGapMethod; label: string }[] = [
@@ -314,6 +344,71 @@ export function PredictionChart() {
     );
   };
 
+  const handleUipChange = (value: number) => {
+    const clamped = Math.max(UIP_MIN, Math.min(UIP_MAX, value));
+    setUipInput(clamped);
+  };
+
+  const handleUipReset = () => {
+    setUipInput(null);
+    setDebouncedUip(null);
+  };
+
+  const renderUipPanel = () => {
+    if (engine !== "is_lm") return null;
+    const disabled = STATIC_MODE;
+    const displayUip = uipInput ?? UIP_DEFAULT;
+    return (
+      <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-4">
+        <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
+          <h3 className="text-sm font-medium text-gray-800">
+            UIP感応度（円/pp）
+          </h3>
+          <span className="text-xs text-gray-500" title="JGB金利 1%p上昇あたりの円高幅（円）">
+            JGB金利 1%p上昇あたりの円高幅
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="number"
+            step={UIP_STEP}
+            min={UIP_MIN}
+            max={UIP_MAX}
+            value={uipInput !== null ? uipInput : ""}
+            placeholder={`${UIP_DEFAULT} (デフォルト)`}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (!Number.isNaN(v)) handleUipChange(v);
+            }}
+            disabled={disabled}
+            className="w-24 px-2 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400"
+            aria-label="UIP感応度"
+          />
+          <span className="text-xs text-gray-500">円/pp</span>
+          <input
+            type="range"
+            step={UIP_STEP}
+            min={UIP_MIN}
+            max={UIP_MAX}
+            value={displayUip}
+            onChange={(e) => handleUipChange(Number(e.target.value))}
+            disabled={disabled}
+            className="flex-1 min-w-[140px] disabled:opacity-50"
+            aria-label="UIP感応度スライダー"
+          />
+          <button
+            type="button"
+            onClick={handleUipReset}
+            disabled={disabled || uipInput === null}
+            className="px-3 py-1 text-xs font-medium border border-gray-300 rounded bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            デフォルト
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   if (loading && !data) {
     return (
       <div className="bg-white rounded-lg shadow p-6">
@@ -398,6 +493,7 @@ export function PredictionChart() {
       </div>
 
       {renderScenarioPanel()}
+      {renderUipPanel()}
 
       {loading && (
         <p className="text-xs text-gray-400 mb-2">更新中...</p>
@@ -407,6 +503,11 @@ export function PredictionChart() {
         <h3 className="text-sm font-medium text-gray-700 mb-2">
           金利予測（JGB 10年）
         </h3>
+        {data.impact_prediction.assumptions.zlb_binding && (
+          <p className="text-xs text-amber-600 mb-1">
+            ※ ゼロ金利制約により金利下限 0% で切断
+          </p>
+        )}
         <ResponsiveContainer width="100%" height={180}>
           <LineChart data={rateData}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -485,6 +586,18 @@ export function PredictionChart() {
           )}
           {data.impact_prediction.assumptions.investment_sensitivity != null && (
             <div>投資の利子感応度: {data.impact_prediction.assumptions.investment_sensitivity}</div>
+          )}
+          {data.impact_prediction.assumptions.uip_sensitivity != null && (
+            <div>UIP感応度: {data.impact_prediction.assumptions.uip_sensitivity} 円/pp</div>
+          )}
+          {data.impact_prediction.assumptions.baseline_jgb_10y != null && (
+            <div>ベースライン金利（JGB 10Y）: {data.impact_prediction.assumptions.baseline_jgb_10y}%</div>
+          )}
+          {data.impact_prediction.assumptions.baseline_usdjpy != null && (
+            <div>ベースライン為替（USD/JPY）: {data.impact_prediction.assumptions.baseline_usdjpy}円</div>
+          )}
+          {data.impact_prediction.assumptions.zlb_binding != null && (
+            <div>ゼロ金利制約: {data.impact_prediction.assumptions.zlb_binding ? "有効（流動性の罠）" : "非拘束"}</div>
           )}
           {data.impact_prediction.assumptions.lag_order != null && (
             <div>ラグ次数: {data.impact_prediction.assumptions.lag_order}</div>

@@ -37,6 +37,15 @@ async def prediction(
             "ar1 (AR(1) ベンチマーク)"
         ),
     ),
+    uip_sensitivity: float | None = Query(
+        None,
+        description=(
+            "UIP感応度（円/pp）。JGB金利1%p上昇あたりの円高幅。"
+            "未指定時はデフォルト値 2.0 を使用。範囲: 0〜10"
+        ),
+        ge=0.0,
+        le=10.0,
+    ),
 ):
     if method not in VALID_METHODS:
         method = "maximum"
@@ -58,4 +67,5 @@ async def prediction(
         method=method,
         fiscal_spending_trillion=fiscal_spending_trillion,
         engine=engine,
+        uip_sensitivity=uip_sensitivity,
     )

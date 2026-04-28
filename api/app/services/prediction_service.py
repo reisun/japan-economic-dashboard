@@ -72,15 +72,57 @@ def _get_nominal_gdp() -> float:
     )
     return _NOMINAL_GDP_FALLBACK
 
-# Current baseline interest rates
+# Current baseline interest rates (fallback when live fetch fails)
 BASELINE_JGB_10Y = 0.85  # percent
 BASELINE_USDJPY = 150.0
+
+# Zero Lower Bound for JGB 10Y nominal rate (percent)
+ZLB_RATE = 0.0
 
 # UIP sensitivity: how much JPY appreciates per 1pp rise in JGB yield
 # (simplified: higher domestic rates → stronger yen)
 UIP_SENSITIVITY = 2.0  # yen per percentage point
 
 PREDICTION_YEARS_AHEAD = 2
+
+
+@cached("latest_rates_for_prediction")
+def _get_latest_rates() -> tuple[float, float]:
+    """Fetch latest JGB 10Y and USD/JPY from the rates service.
+
+    Uses FRED BOJ rates for JGB 10Y and FRED FX for USD/JPY.
+    Falls back to hardcoded constants if fetch fails.
+    Returns (jgb_10y_percent, usdjpy).
+    """
+    try:
+        from app.services.rates_service import _fetch_boj_rates, _fetch_fred_fx
+
+        jgb = BASELINE_JGB_10Y
+        fx = BASELINE_USDJPY
+
+        boj_rates = _fetch_boj_rates()
+        if boj_rates:
+            for pt in reversed(boj_rates):
+                if pt.jgb_10y_yield is not None:
+                    jgb = pt.jgb_10y_yield
+                    break
+
+        fred_fx = _fetch_fred_fx()
+        if fred_fx:
+            fx = fred_fx[-1].usdjpy
+
+        logger.info(
+            "Dynamic baselines: JGB 10Y=%.2f%%, USD/JPY=%.1f",
+            jgb,
+            fx,
+        )
+        return (jgb, fx)
+    except Exception:
+        logger.exception(
+            "Failed to fetch dynamic baselines, using fallbacks"
+        )
+        return (BASELINE_JGB_10Y, BASELINE_USDJPY)
+
 
 # シナリオ入力の範囲（兆円）
 FISCAL_SPENDING_MIN = -200.0
@@ -112,10 +154,15 @@ def _compute_is_lm_impact(
     fiscal_spending_trillion: float,
     n_quarters: int,
     nominal_gdp: float,
-) -> tuple[list[float], list[float]]:
+    baseline_jgb: float = BASELINE_JGB_10Y,
+    baseline_fx: float = BASELINE_USDJPY,
+    uip_sensitivity: float = UIP_SENSITIVITY,
+) -> tuple[list[float], list[float], bool]:
     """Compute predicted interest rates and exchange rates per quarter.
 
-    Returns (jgb_10y_list, usdjpy_list) for each quarter.
+    Returns (jgb_10y_list, usdjpy_list, zlb_binding) for each quarter.
+    The ZLB constraint clamps the nominal rate at ZLB_RATE and adjusts
+    the effective dr for UIP accordingly (liquidity trap behavior).
     """
     n = n_quarters
 
@@ -137,16 +184,28 @@ def _compute_is_lm_impact(
 
     jgb_rates: list[float] = []
     usdjpy_rates: list[float] = []
+    zlb_binding = False
 
     for frac in phase_in:
         dr = total_dr * frac
-        r = round(BASELINE_JGB_10Y + dr, 2)
+        r = baseline_jgb + dr
+
+        # Zero Lower Bound constraint
+        if r < ZLB_RATE:
+            r = ZLB_RATE
+            zlb_binding = True
+            # Effective dr for UIP is based on clamped rate
+            effective_dr = ZLB_RATE - baseline_jgb
+        else:
+            effective_dr = dr
+
+        r = round(r, 2)
         # UIP: higher domestic rate → yen appreciation (lower USD/JPY)
-        fx = round(BASELINE_USDJPY - dr * UIP_SENSITIVITY, 1)
+        fx = round(baseline_fx - effective_dr * uip_sensitivity, 1)
         jgb_rates.append(r)
         usdjpy_rates.append(fx)
 
-    return jgb_rates, usdjpy_rates
+    return jgb_rates, usdjpy_rates, zlb_binding
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +234,7 @@ async def get_prediction(
     method: str = "maximum",
     fiscal_spending_trillion: float | None = None,
     engine: str = "is_lm",
+    uip_sensitivity: float | None = None,
 ) -> PredictionResponse:
     """予測モデル切替対応のディスパッチャ。
 
@@ -199,6 +259,9 @@ async def get_prediction(
 
     # Fetch dynamic nominal GDP
     nominal_gdp = _get_nominal_gdp()
+
+    # Fetch dynamic baseline rates
+    baseline_jgb, baseline_fx = _get_latest_rates()
 
     # Get latest GDP gap estimate
     try:
@@ -232,10 +295,18 @@ async def get_prediction(
         required_spending = auto_required_spending
         scenario_mode = "auto"
 
+    # Resolve effective UIP sensitivity
+    effective_uip = uip_sensitivity if uip_sensitivity is not None else UIP_SENSITIVITY
+
     # IS-LM impact
     quarters = _build_prediction_quarters()
-    jgb_rates, usdjpy_rates = _compute_is_lm_impact(
-        required_spending, len(quarters), nominal_gdp
+    jgb_rates, usdjpy_rates, zlb_binding = _compute_is_lm_impact(
+        required_spending,
+        len(quarters),
+        nominal_gdp,
+        baseline_jgb=baseline_jgb,
+        baseline_fx=baseline_fx,
+        uip_sensitivity=effective_uip,
     )
 
     # Build prediction arrays
@@ -281,6 +352,10 @@ async def get_prediction(
                 investment_sensitivity=INVESTMENT_SENSITIVITY,
                 fiscal_multiplier=FISCAL_MULTIPLIER,
                 nominal_gdp_trillion_yen=nominal_gdp,
+                uip_sensitivity=effective_uip,
+                baseline_jgb_10y=baseline_jgb,
+                baseline_usdjpy=baseline_fx,
+                zlb_binding=zlb_binding,
             ),
         ),
     )
