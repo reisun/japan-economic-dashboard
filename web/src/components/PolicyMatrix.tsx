@@ -195,6 +195,18 @@ function pickGapSeries(data: GdpGapResponse, method: GdpGapMethod) {
   }
 }
 
+/** 配列末尾から走査し、getter が non-null な値を返す最初の要素を返す。 */
+function findLastNonNull<T>(
+  arr: T[],
+  getter: (item: T) => number | null | undefined,
+): T | undefined {
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const v = getter(arr[i]);
+    if (v !== null && v !== undefined) return arr[i];
+  }
+  return undefined;
+}
+
 interface PolicyMatrixProps {
   /** Dashboard で選択中のギャップ系統。GdpGapChart と必ず一致させる。 */
   method: GdpGapMethod;
@@ -241,12 +253,14 @@ export function PolicyMatrix({ method }: PolicyMatrixProps) {
   const gdpData = gdpState.data;
   const inflData = inflState.data;
 
-  // 直近値: 選択中の系統のギャップと CPIコアコア
+  // 直近の非null値を後方から探索（末尾が null の場合に誤った象限配置を防ぐ）
   const series = pickGapSeries(gdpData, method);
-  const lastGap = series[series.length - 1];
-  const lastInfl = inflData.data[inflData.data.length - 1];
-  const gapPct = lastGap?.gdp_gap_percent ?? 0;
-  const cpi = lastInfl?.cpi_core_core ?? 0;
+  const lastGapItem = findLastNonNull(series, (p) => p.gdp_gap_percent);
+  const lastInflItem = findLastNonNull(inflData.data, (p) => p.cpi_core_core);
+  const gapPct = lastGapItem?.gdp_gap_percent ?? 0;
+  const cpi = lastInflItem?.cpi_core_core ?? 0;
+  const gapDate = lastGapItem?.date ?? "N/A";
+  const cpiDate = lastInflItem?.date ?? "N/A";
   const inflThreshold = inflData.boj_target;
 
   const active = classifyQuadrant(gapPct, cpi, inflThreshold, spec.gapThreshold);
@@ -279,6 +293,9 @@ export function PolicyMatrix({ method }: PolicyMatrixProps) {
             {spec.gapThreshold.toFixed(1)}%
           </span>
         </div>
+      </div>
+      <div className="text-xs text-gray-400 mb-3">
+        現在位置: {gapDate} GDP gap / {cpiDate} CPI
       </div>
       <div className="grid grid-cols-2 gap-2">
         {spec.quadrants.map((q) => {
