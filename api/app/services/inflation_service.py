@@ -126,65 +126,24 @@ _YOY_NAME_HINTS = (
 def _estat_extract_cpi_core_core_yoy(payload: dict) -> dict[str, float]:
     """e-Stat getStatsData レスポンスから CPI コアコア前年同月比%の月次辞書を抽出。
 
-    e-Stat の構造:
-      GET_STATS_DATA.STATISTICAL_DATA.CLASS_INF.CLASS_OBJ[]: 各分類軸の定義
-      GET_STATS_DATA.STATISTICAL_DATA.DATA_INF.VALUE[]: データセル
-        各 VALUE は @cat01, @cat02, @time, @unit, $: 値
+    リクエスト時にサーバーサイドフィルタ (cdTab/cdCat01/cdArea) を適用済みのため、
+    VALUE 配列は対象系列のみ。@time と $ を抽出するだけで良い。
+
+    e-Stat time コード形式: "YYYY__MM__" (例: "2026000303" = 2026年3月)
+    → 位置 6-7 が月。位置 4-5 が "10" なら年度値なのでスキップ。
     """
     try:
         sd = payload["GET_STATS_DATA"]["STATISTICAL_DATA"]
-        class_inf = sd.get("CLASS_INF", {}).get("CLASS_OBJ", [])
         values = sd.get("DATA_INF", {}).get("VALUE", [])
         if isinstance(values, dict):
             values = [values]
         if not values:
             return {}
 
-        # CLASS_OBJ から「指数の種類（前年同月比）」「品目（生鮮食品及びエネルギーを除く総合）」
-        # に対応するコードを決定する。CLASS_OBJ は配列のことも単一dictのこともある。
-        if isinstance(class_inf, dict):
-            class_inf = [class_inf]
-
-        # 軸ID(@id) → {コード: 名前}
-        axis_codes: dict[str, dict[str, str]] = {}
-        for axis in class_inf:
-            axis_id = axis.get("@id")
-            classes = axis.get("CLASS", [])
-            if isinstance(classes, dict):
-                classes = [classes]
-            axis_codes[axis_id] = {c.get("@code"): c.get("@name", "") for c in classes}
-
-        # 「前年同月比」「コアコア」のコードを探す
-        target_yoy_codes: set[tuple[str, str]] = set()  # (axis_id, code)
-        target_item_codes: set[tuple[str, str]] = set()
-        for axis_id, codes in axis_codes.items():
-            for code, name in codes.items():
-                if any(h in name for h in _YOY_NAME_HINTS):
-                    target_yoy_codes.add((axis_id, code))
-                if any(h in name for h in _CORE_CORE_NAME_HINTS):
-                    target_item_codes.add((axis_id, code))
-
-        if not target_yoy_codes:
-            logger.warning("e-Stat CPI: 前年同月比 のコードが見つからない")
-            return {}
-        if not target_item_codes:
-            logger.warning("e-Stat CPI: 生鮮食品及びエネルギーを除く総合 のコードが見つからない")
-            return {}
-
-        # @ プレフィクス付きの軸キーに変換
-        def axis_key(axis_id: str) -> str:
-            return f"@{axis_id}"
-
         out: dict[str, float] = {}
         for v in values:
-            # YoY 軸チェック
-            yoy_match = any(v.get(axis_key(aid)) == code for aid, code in target_yoy_codes)
-            item_match = any(v.get(axis_key(aid)) == code for aid, code in target_item_codes)
-            if not (yoy_match and item_match):
-                continue
-            time_code = v.get("@time", "")  # 例: "2024000101" or "2024010000"
-            # e-Stat の time コードは "YYYYMM00" 形式（月次）
-            m = re.match(r"^(\d{4})(\d{2})", str(time_code))
+            time_code = str(v.get("@time", ""))
+            m = re.match(r"^(\d{4})\d{2}(\d{2})\d{2}$", time_code)
             if not m:
                 continue
             year = int(m.group(1))
@@ -207,7 +166,14 @@ def _fetch_cpi_core_core_via_estat() -> dict[str, float] | None:
     import os as _os
 
     stats_data_id = _os.getenv("ESTAT_CPI_STATS_DATA_ID", _ESTAT_CPI_STATS_DATA_ID_DEFAULT)
-    payload = fetch_estat_stats_data(stats_data_id)
+    payload = fetch_estat_stats_data(
+        stats_data_id,
+        extra_params={
+            "cdTab": "3",       # 前年同月比
+            "cdCat01": "0178",  # 生鮮食品及びエネルギーを除く総合
+            "cdArea": "00000",  # 全国
+        },
+    )
     if payload is None:
         return None
     monthly = _estat_extract_cpi_core_core_yoy(payload)
