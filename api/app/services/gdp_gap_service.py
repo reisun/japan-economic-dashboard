@@ -503,9 +503,8 @@ def _fetch_boj_gdp_gap() -> list[GdpGapDataPoint] | None:
                 )
             )
 
-        # Return last 20 quarters (~5 years)
         if results:
-            return results[-20:]
+            return results
         return None
     except Exception:
         logger.exception("BOJ GDP gap fetch failed")
@@ -528,7 +527,7 @@ def _fetch_real_gdp() -> tuple[list[float], list[str]] | None:
 
         fred = Fred(api_key=api_key)
         end = datetime.now()
-        start = end - timedelta(days=365 * 5)
+        start = end - timedelta(days=365 * 26)
         series = fred.get_series(
             "JPNRGDPEXP", observation_start=start, observation_end=end
         )

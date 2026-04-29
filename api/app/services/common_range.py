@@ -130,7 +130,7 @@ def get_actual_period_range() -> tuple[str, str]:
         # フォールバック: 当年と前年4Qで広めに切る
         today = date.today()
         end_year = today.year
-        start_year = end_year - 2
+        start_year = end_year - 24
         computed = (f"{start_year}-Q1", f"{end_year}-Q4")
         logger.warning(
             "共通レンジをGDPギャップから取得できず。フォールバック: %s〜%s",
@@ -160,6 +160,12 @@ def _is_in_quarter_range(
     return _quarter_index(*start_yq) <= idx <= _quarter_index(*end_yq)
 
 
+def _parse_year_only(s: str) -> int | None:
+    """'YYYY' → year (int). Returns None if not a bare 4-digit year."""
+    m = re.match(r"^(\d{4})$", str(s).strip())
+    return int(m.group(1)) if m else None
+
+
 def is_date_in_range(date_str: str, range_: tuple[str, str] | None = None) -> bool:
     """date_str が共通レンジ内かを判定。
 
@@ -167,6 +173,7 @@ def is_date_in_range(date_str: str, range_: tuple[str, str] | None = None) -> bo
       - 'YYYY-Qn'    クォーター: 直接マッチ
       - 'YYYY-MM'    月次: 当該月の所属クォーターがレンジ内なら true
       - 'YYYY-MM-DD' 日次: 同上
+      - 'YYYY'       年次: その年のいずれかの四半期がレンジ内なら true
     """
     rng = range_ or get_actual_period_range()
     start_yq = _parse_quarter_label(rng[0])
@@ -185,6 +192,14 @@ def is_date_in_range(date_str: str, range_: tuple[str, str] | None = None) -> bo
         year, month, _day = iso
         y, q = _date_to_quarter(year, month)
         return _is_in_quarter_range(y, q, start_yq, end_yq)
+
+    # 3) 年次 ("YYYY"): その年のいずれかの四半期がレンジ内なら true
+    year_only = _parse_year_only(date_str)
+    if year_only is not None:
+        for q in (1, 2, 3, 4):
+            if _is_in_quarter_range(year_only, q, start_yq, end_yq):
+                return True
+        return False
 
     # 不明形式: 残す（破壊的にしない）
     return True
