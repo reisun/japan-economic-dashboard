@@ -3,6 +3,7 @@
 各サービスから呼ばれる共通ヘルパを集約する。
 - FRED 系列の取得（API キー無し時は None）
 - 月次 → 四半期集計
+- 四半期/月次 → 年次集計
 - 前年同期比（YoY）計算
 - 四半期ラベル変換 ("YYYY-Qn")
 """
@@ -271,6 +272,109 @@ def fetch_estat_stats_data(
             status_key, ok=False, detail=f"exception:{type(e).__name__}"
         )
         return None
+
+
+def _extract_year(date_str: str) -> str | None:
+    """日付文字列から年を抽出する。
+
+    対応形式: "YYYY-Qn", "YYYY-MM", "YYYY-MM-DD", "YYYY"
+    """
+    import re as _re
+
+    s = str(date_str).strip()
+    # "YYYY-Qn"
+    m = _re.match(r"^(\d{4})-Q[1-4]$", s)
+    if m:
+        return m.group(1)
+    # "YYYY-MM-DD" or "YYYY-MM"
+    m = _re.match(r"^(\d{4})-\d{2}(?:-\d{2})?$", s)
+    if m:
+        return m.group(1)
+    # "YYYY"
+    m = _re.match(r"^(\d{4})$", s)
+    if m:
+        return m.group(1)
+    return None
+
+
+def quarterly_to_yearly(
+    data: list[dict],
+    value_fields: list[str],
+) -> list[dict]:
+    """四半期データ [{date: "YYYY-Qn", field: val}] を年次 [{date: "YYYY", field: mean}] に集計。
+
+    各年の非 None 値の平均を算出する。全値が None の年はその項目を None とする。
+    """
+    if not data:
+        return []
+    buckets: dict[str, list[dict]] = {}
+    for item in data:
+        year = _extract_year(item.get("date", ""))
+        if year is None:
+            continue
+        buckets.setdefault(year, []).append(item)
+
+    result: list[dict] = []
+    for year in sorted(buckets):
+        row: dict = {"date": year}
+        for field in value_fields:
+            vals = [
+                item[field]
+                for item in buckets[year]
+                if item.get(field) is not None
+            ]
+            row[field] = round(sum(vals) / len(vals), 2) if vals else None
+        result.append(row)
+    return result
+
+
+def monthly_to_yearly(
+    data: list[dict],
+    value_fields: list[str],
+) -> list[dict]:
+    """月次/日次データ [{date: "YYYY-MM-DD", field: val}] を年次に集計。
+
+    quarterly_to_yearly と同じロジック（年抽出 + 平均集計）。
+    """
+    return quarterly_to_yearly(data, value_fields)
+
+
+def quarterly_fof_to_yearly(
+    data: list[dict],
+    value_fields: list[str],
+    group_field: str = "sector",
+) -> list[dict]:
+    """四半期 FOF データを年次に集計（セクター別グルーピングを保持）。
+
+    入力: [{date: "YYYY-Qn", sector: "households", net_lending: val}, ...]
+    出力: [{date: "YYYY", sector: "households", net_lending: yearly_mean}, ...]
+    """
+    if not data:
+        return []
+    # (year, group_value) ごとにバケット化
+    buckets: dict[tuple[str, str], list[dict]] = {}
+    for item in data:
+        year = _extract_year(item.get("date", ""))
+        if year is None:
+            continue
+        group_val = item.get(group_field, "")
+        buckets.setdefault((year, group_val), []).append(item)
+
+    result: list[dict] = []
+    sector_order = {"households": 0, "corporations": 1, "government": 2}
+    for (year, group_val) in sorted(
+        buckets, key=lambda k: (k[0], sector_order.get(k[1], 99))
+    ):
+        row: dict = {"date": year, group_field: group_val}
+        for field in value_fields:
+            vals = [
+                item[field]
+                for item in buckets[(year, group_val)]
+                if item.get(field) is not None
+            ]
+            row[field] = round(sum(vals) / len(vals), 2) if vals else None
+        result.append(row)
+    return result
 
 
 def monthly_dict_to_quarterly_mean(monthly: dict[str, float]) -> dict[str, float]:

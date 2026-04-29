@@ -81,7 +81,7 @@ _MOCK_BY_DATE = {d["date"]: d for d in _MOCK_INFLATION}
 @cached("fred_gdp_deflator_yoy")
 def _fetch_gdp_deflator_yoy() -> dict[str, float] | None:
     """GDPデフレータ前年同期比%を FRED から取得。"""
-    series = fetch_fred_series("NGDPDSAIXJPQ", years=6)
+    series = fetch_fred_series("NGDPDSAIXJPQ", years=26)
     if series is None:
         return None
     return yoy_pct_quarterly(series)
@@ -202,7 +202,7 @@ def _fetch_wage_growth_yoy() -> dict[str, float] | None:
 
     # B: FRED (manufacturing, fallback)
     _wage_source = "fred"
-    series = fetch_fred_series("LCEAMN01JPM659S", years=6)
+    series = fetch_fred_series("LCEAMN01JPM659S", years=26)
     if series is not None:
         quarterly = quarterize_monthly(series, how="mean")
         return to_quarter_labelled(quarterly)

@@ -118,8 +118,8 @@ def _fetch_bank_lending() -> list[BankLendingDataPoint] | None:
 
         fred = Fred(api_key=api_key)
         end = datetime.now()
-        # Fetch 6 years so we have 1 extra year for YoY calculation
-        start = end - timedelta(days=365 * 6)
+        # Fetch 26 years so we have 1 extra year for YoY calculation
+        start = end - timedelta(days=365 * 26)
         series = fred.get_series(
             "CRDQJPAPABIS", observation_start=start, observation_end=end
         )
@@ -138,7 +138,7 @@ def _fetch_bank_lending() -> list[BankLendingDataPoint] | None:
 
         results: list[BankLendingDataPoint] = []
         # Only output the last ~5 years (skip first year used for YoY baseline)
-        cutoff = end - timedelta(days=365 * 5)
+        cutoff = end - timedelta(days=365 * 25)
         for (year, q), (ts, val) in sorted(by_yq.items()):
             if ts < cutoff:
                 continue

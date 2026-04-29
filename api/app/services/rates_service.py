@@ -80,7 +80,7 @@ def _fetch_fred_rates() -> list[FredRateDataPoint] | None:
 
         fred = Fred(api_key=api_key)
         end = datetime.now()
-        start = end - timedelta(days=365)
+        start = end - timedelta(days=365 * 26)
         us10y = fred.get_series("DGS10", observation_start=start, observation_end=end)
         fedfunds = fred.get_series("FEDFUNDS", observation_start=start, observation_end=end)
 
@@ -127,7 +127,7 @@ def _fetch_fred_fx() -> list[ExchangeRateDataPoint] | None:
 
         fred = Fred(api_key=api_key)
         end = datetime.now()
-        start = end - timedelta(days=365)
+        start = end - timedelta(days=365 * 26)
         fx = fred.get_series("DEXJPUS", observation_start=start, observation_end=end)
         fx_m = fx.resample("MS").last().dropna()
         results = [
@@ -156,7 +156,7 @@ def _fetch_yahoo_fx() -> list[ExchangeRateDataPoint] | None:
         import yfinance as yf
 
         ticker = yf.Ticker("JPY=X")
-        hist = ticker.history(period="1y", interval="1mo")
+        hist = ticker.history(period="max", interval="1mo")
         if hist.empty:
             return None
         results = [
@@ -191,7 +191,7 @@ def _fetch_boj_rates() -> list[BojRateDataPoint] | None:
 
         fred = Fred(api_key=api_key)
         end = datetime.now()
-        start = end - timedelta(days=365)
+        start = end - timedelta(days=365 * 26)
         call_rate = fred.get_series(
             "IRSTCI01JPM156N", observation_start=start, observation_end=end
         )
