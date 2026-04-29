@@ -71,11 +71,11 @@ const TOGGLE_ITEMS: { key: string; label: string; color: string }[] = [
 
 export function FundDemandChart() {
   const [visibleSectors, setVisibleSectors] = useState<Record<string, boolean>>({
-    households: true,
-    corporations: true,
+    households: false,
+    corporations: false,
     government: true,
-    private: false,
-    net: false,
+    private: true,
+    net: true,
   });
   const { data, loading, error } = useApi<FundDemandResponse>("/fund-demand");
 
