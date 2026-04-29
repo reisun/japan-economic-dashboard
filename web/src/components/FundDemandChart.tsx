@@ -55,6 +55,7 @@ function mergeFlowData(data: FundDemandResponse): MergedFlowPoint[] {
     const c = (point.corporations as number | null) ?? 0;
     const g = (point.government as number | null) ?? 0;
     point.net = h + c + g;
+    point.private = h + c;
   }
 
   return sorted;
@@ -64,6 +65,7 @@ const TOGGLE_ITEMS: { key: string; label: string; color: string }[] = [
   { key: "households", label: "家計", color: SECTOR_COLORS.households },
   { key: "corporations", label: "企業", color: SECTOR_COLORS.corporations },
   { key: "government", label: "政府", color: SECTOR_COLORS.government },
+  { key: "private", label: "民間（家計+企業）", color: "#9333ea" },
   { key: "net", label: "ネット合計", color: "#374151" },
 ];
 
@@ -72,6 +74,7 @@ export function FundDemandChart() {
     households: true,
     corporations: true,
     government: true,
+    private: false,
     net: false,
   });
   const { data, loading, error } = useApi<FundDemandResponse>("/fund-demand");
@@ -171,6 +174,19 @@ export function FundDemandChart() {
                     connectNulls
                   />
                 )
+            )}
+            {visibleSectors.private && (
+              <Line
+                key="private"
+                type="monotone"
+                dataKey="private"
+                name="民間（家計+企業）"
+                stroke="#9333ea"
+                strokeWidth={2.5}
+                strokeDasharray="6 3"
+                dot={false}
+                connectNulls
+              />
             )}
             {visibleSectors.net && (
               <Line
