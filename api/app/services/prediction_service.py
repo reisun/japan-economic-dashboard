@@ -361,13 +361,14 @@ async def get_prediction(
         for i, (q, impact) in enumerate(zip(quarters, gdp_impacts_pct))
     ]
 
-    # Phillips curve inflation prediction using actual GDP impact path
+    # Phillips curve inflation prediction: fiscal policy change drives inflation change.
+    # Current inflation already reflects current gap, so only the fiscal impact matters.
     baseline_inflation = _get_baseline_inflation()
     inflation_predictions = [
         InflationPredictionPoint(
             date=q,
             predicted_inflation_percent=round(
-                baseline_inflation + PHILLIPS_CURVE_SLOPE * (gap_pct + impact),
+                baseline_inflation + PHILLIPS_CURVE_SLOPE * impact,
                 2,
             ),
             type="actual" if i == 0 else "prediction",
