@@ -85,7 +85,6 @@ export interface RatesResponse {
     boj: BojRateDataPoint[];
   };
   exchange_rates: {
-    yahoo_finance: ExchangeRateDataPoint[];
     fred: ExchangeRateDataPoint[];
   };
   data_status?: Record<string, string>;

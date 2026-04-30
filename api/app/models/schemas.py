@@ -101,7 +101,6 @@ class InterestRates(BaseModel):
 
 
 class ExchangeRates(BaseModel):
-    yahoo_finance: list[ExchangeRateDataPoint]
     fred: list[ExchangeRateDataPoint]
 
 

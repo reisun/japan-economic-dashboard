@@ -68,9 +68,6 @@ Response:
     ]
   },
   "exchange_rates": {
-    "yahoo_finance": [
-      {"date": "2020-01-01", "usdjpy": 108.5}
-    ],
     "fred": [
       {"date": "2020-01-01", "usdjpy": 108.5}
     ]

@@ -532,10 +532,6 @@ def generate_rates():
         for i, d in enumerate(dates)
     ]
 
-    yahoo_fx = [
-        {"date": d, "usdjpy": round(148.0 + i * 0.5, 1)} for i, d in enumerate(dates)
-    ]
-
     fred_fx = [
         {"date": d, "usdjpy": round(148.0 + i * 0.5, 1)} for i, d in enumerate(dates)
     ]
@@ -546,7 +542,6 @@ def generate_rates():
             "boj": boj_rates,
         },
         "exchange_rates": {
-            "yahoo_finance": yahoo_fx,
             "fred": fred_fx,
         },
     }
@@ -1165,9 +1160,6 @@ def _apply_unified_range(gdp_gap, fund_demand, rates, inflation):
     )
     rates["interest_rates"]["boj"] = _filter_to_range(
         rates["interest_rates"]["boj"], start_yq, end_yq, label="rates.boj"
-    )
-    rates["exchange_rates"]["yahoo_finance"] = _filter_to_range(
-        rates["exchange_rates"]["yahoo_finance"], start_yq, end_yq, label="fx.yahoo"
     )
     rates["exchange_rates"]["fred"] = _filter_to_range(
         rates["exchange_rates"]["fred"], start_yq, end_yq, label="fx.fred"
