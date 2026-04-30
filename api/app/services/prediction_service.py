@@ -20,7 +20,9 @@ from app.models.schemas import (
     Assumptions,
     CurrentGap,
     ExchangeRatePrediction,
+    GdpImpactPoint,
     ImpactPrediction,
+    InflationPredictionPoint,
     InterestRatePrediction,
     PredictionResponse,
     RequiredFiscalSpending,
@@ -83,7 +85,33 @@ ZLB_RATE = 0.0
 # (simplified: higher domestic rates → stronger yen)
 UIP_SENSITIVITY = 2.0  # yen per percentage point
 
+# Phillips curve slope: sensitivity of inflation to GDP gap (percentage points)
+# Japan's empirical range is 0.1-0.5; 0.3 is a reasonable central estimate
+PHILLIPS_CURVE_SLOPE = 0.3
+
 PREDICTION_YEARS_AHEAD = 2
+
+
+@cached("baseline_inflation")
+def _get_baseline_inflation() -> float:
+    """Get latest CPI core-core YoY as baseline inflation.
+
+    Fetches from inflation_service and returns the most recent value.
+    Falls back to 2.0% if unavailable.
+    """
+    try:
+        from app.services.inflation_service import _fetch_cpi_core_core_yoy
+
+        cpi_q = _fetch_cpi_core_core_yoy()
+        if cpi_q:
+            latest_q = max(cpi_q.keys())
+            val = cpi_q[latest_q]
+            logger.info("Baseline inflation from CPI core-core: %.1f%% (%s)", val, latest_q)
+            return val
+    except Exception:
+        logger.exception("Failed to fetch baseline inflation")
+    logger.info("Baseline inflation: using fallback 2.0%%")
+    return 2.0
 
 
 @cached("latest_rates_for_prediction")
@@ -328,6 +356,38 @@ async def get_prediction(
         for i, (q, fx) in enumerate(zip(quarters, usdjpy_rates))
     ]
 
+    # GDP impact path: fiscal spending effect on GDP (% change from baseline)
+    # dY = fiscal_spending * FISCAL_MULTIPLIER, as % of nominal GDP
+    total_gdp_change_pct = required_spending * FISCAL_MULTIPLIER / nominal_gdp * 100
+
+    # Phase-in follows the same schedule as interest rates
+    n = len(quarters)
+    ramp_quarters = 4
+    phase_in = [0.0] + [min(1.0, i / ramp_quarters) for i in range(1, n)]
+
+    gdp_impact_predictions = [
+        GdpImpactPoint(
+            date=q,
+            predicted_gdp_change_percent=round(total_gdp_change_pct * frac, 4),
+            type="actual" if i == 0 else "prediction",
+        )
+        for i, (q, frac) in enumerate(zip(quarters, phase_in))
+    ]
+
+    # Phillips curve inflation prediction
+    baseline_inflation = _get_baseline_inflation()
+    inflation_predictions = [
+        InflationPredictionPoint(
+            date=q,
+            predicted_inflation_percent=round(
+                baseline_inflation + PHILLIPS_CURVE_SLOPE * (gap_pct + total_gdp_change_pct * frac),
+                2,
+            ),
+            type="actual" if i == 0 else "prediction",
+        )
+        for i, (q, frac) in enumerate(zip(quarters, phase_in))
+    ]
+
     return PredictionResponse(
         current_gap=CurrentGap(
             gdp_gap_percent=gap_pct,
@@ -345,6 +405,8 @@ async def get_prediction(
         impact_prediction=ImpactPrediction(
             interest_rate=interest_predictions,
             exchange_rate=exchange_predictions,
+            gdp_impact=gdp_impact_predictions,
+            inflation_prediction=inflation_predictions,
             model="IS-LM",
             engine="is_lm",
             assumptions=Assumptions(
@@ -356,6 +418,8 @@ async def get_prediction(
                 baseline_jgb_10y=baseline_jgb,
                 baseline_usdjpy=baseline_fx,
                 zlb_binding=zlb_binding,
+                phillips_curve_slope=PHILLIPS_CURVE_SLOPE,
+                baseline_inflation=baseline_inflation,
             ),
         ),
     )

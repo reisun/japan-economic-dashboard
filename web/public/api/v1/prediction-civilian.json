@@ -53,12 +53,58 @@
         "type": "prediction"
       }
     ],
+    "gdp_impact": [
+      {
+        "date": "2025-Q1",
+        "predicted_gdp_change_percent": 0.0,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_gdp_change_percent": 0.8721,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_gdp_change_percent": 1.7707,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_gdp_change_percent": 2.6429,
+        "type": "prediction"
+      }
+    ],
+    "inflation_prediction": [
+      {
+        "date": "2025-Q1",
+        "predicted_inflation_percent": 1.41,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_inflation_percent": 1.67,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_inflation_percent": 1.94,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_inflation_percent": 2.2,
+        "type": "prediction"
+      }
+    ],
     "model": "IS-LM",
     "engine": "is_lm",
     "assumptions": {
       "money_demand_elasticity": 0.5,
       "investment_sensitivity": 0.3,
-      "fiscal_multiplier": 1.0
+      "fiscal_multiplier": 1.0,
+      "phillips_curve_slope": 0.3,
+      "baseline_inflation": 2.2
     }
   }
 }

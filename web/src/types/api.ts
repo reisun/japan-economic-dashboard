@@ -106,6 +106,18 @@ export interface PredictionExchangePoint {
 /** 予測エンジン: is_lm (構造) | var (VAR) | ar1 (AR(1) ベンチマーク) */
 export type PredictionEngine = "is_lm" | "var" | "ar1";
 
+export interface GdpImpactPoint {
+  date: string;
+  predicted_gdp_change_percent: number;
+  type: "actual" | "prediction";
+}
+
+export interface InflationPredictionPoint {
+  date: string;
+  predicted_inflation_percent: number;
+  type: "actual" | "prediction";
+}
+
 export interface IrfPoint {
   horizon: number;
   gdp_gap: number | null;
@@ -131,6 +143,8 @@ export interface PredictionResponse {
   impact_prediction: {
     interest_rate: PredictionRatePoint[];
     exchange_rate: PredictionExchangePoint[];
+    gdp_impact: GdpImpactPoint[];
+    inflation_prediction: InflationPredictionPoint[];
     model: string;
     engine?: PredictionEngine;
     assumptions: {
@@ -142,6 +156,8 @@ export interface PredictionResponse {
       baseline_jgb_10y?: number | null;
       baseline_usdjpy?: number | null;
       zlb_binding?: boolean | null;
+      phillips_curve_slope?: number | null;
+      baseline_inflation?: number | null;
       lag_order?: number | null;
       n_obs?: number | null;
       n_steps?: number | null;

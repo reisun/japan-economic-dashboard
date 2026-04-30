@@ -105,6 +105,100 @@
         "type": "prediction"
       }
     ],
+    "gdp_impact": [
+      {
+        "date": "2024-Q4",
+        "predicted_gdp_change_percent": 0.0,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_gdp_change_percent": 1.4799,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_gdp_change_percent": 1.0951,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_gdp_change_percent": 0.8104,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_gdp_change_percent": 0.5996,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_gdp_change_percent": 0.4437,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_gdp_change_percent": 0.3283,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_gdp_change_percent": 0.243,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_gdp_change_percent": 0.1798,
+        "type": "prediction"
+      }
+    ],
+    "inflation_prediction": [
+      {
+        "date": "2024-Q4",
+        "predicted_inflation_percent": 2.2,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_inflation_percent": 2.17,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_inflation_percent": 2.15,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_inflation_percent": 2.15,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_inflation_percent": 2.14,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_inflation_percent": 2.14,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_inflation_percent": 2.14,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_inflation_percent": 2.14,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_inflation_percent": 2.14,
+        "type": "prediction"
+      }
+    ],
     "model": "AR(1)",
     "engine": "ar1",
     "assumptions": {
