@@ -44,7 +44,10 @@ from app.models.schemas import (
 )
 from app.services.gdp_gap_service import get_gdp_gap
 from app.services.inflation_service import get_inflation
-from app.services.prediction_service import _get_nominal_gdp
+from app.services.prediction_service import (
+    PHILLIPS_CURVE_SLOPE,
+    _get_nominal_gdp,
+)
 from app.services.rates_service import get_rates
 
 logger = logging.getLogger(__name__)
@@ -491,7 +494,8 @@ async def get_var_prediction(
         for i in range(PREDICTION_STEPS)
     ]
 
-    # Inflation prediction: extract CPI core-core from shocked forecast
+    # Inflation prediction: VAR forecast + Phillips curve correction for fiscal impact
+    gdp_impacts = [float(fc_with_shock[i, 0] - fc[i, 0]) for i in range(PREDICTION_STEPS)]
     inflation_predictions = [
         InflationPredictionPoint(
             date=quarters[-1],
@@ -501,7 +505,10 @@ async def get_var_prediction(
     ] + [
         InflationPredictionPoint(
             date=future_q[i],
-            predicted_inflation_percent=round(float(fc_with_shock[i, 3]), 2),
+            predicted_inflation_percent=round(
+                float(fc_with_shock[i, 3]) + PHILLIPS_CURVE_SLOPE * gdp_impacts[i],
+                2,
+            ),
             type="prediction",
         )
         for i in range(PREDICTION_STEPS)
@@ -693,7 +700,8 @@ async def get_ar1_prediction(
         for i in range(PREDICTION_STEPS)
     ]
 
-    # Inflation prediction: CPI core-core from shocked forecast
+    # Inflation prediction: AR(1) forecast + Phillips curve correction for fiscal impact
+    gdp_impacts_ar = [float(fc[i, 0] - fc_baseline[i, 0]) for i in range(PREDICTION_STEPS)]
     inflation_predictions = [
         InflationPredictionPoint(
             date=quarters[-1],
@@ -703,7 +711,10 @@ async def get_ar1_prediction(
     ] + [
         InflationPredictionPoint(
             date=future_q[i],
-            predicted_inflation_percent=round(float(fc[i, 3]), 2),
+            predicted_inflation_percent=round(
+                float(fc_baseline[i, 3]) + PHILLIPS_CURVE_SLOPE * gdp_impacts_ar[i],
+                2,
+            ),
             type="prediction",
         )
         for i in range(PREDICTION_STEPS)
