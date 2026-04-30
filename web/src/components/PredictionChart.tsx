@@ -388,6 +388,34 @@ export function PredictionChart() {
   const gdpData = splitGdpData(data);
   const inflationData = splitInflationData(data);
 
+  // Y軸ドメインをスライダー全範囲（0-150%）に基づいて固定し、
+  // スライダー操作時のオートスケールによる視覚的変化の消失を防ぐ。
+  const gapAbs = Math.abs(data.current_gap.gdp_gap_percent);
+  const assumptions = data.impact_prediction.assumptions;
+  const baselineJgb = assumptions.baseline_jgb_10y ?? 2.0;
+  const baselineFx = assumptions.baseline_usdjpy ?? 150;
+  const baselineInflation = assumptions.baseline_inflation ?? 2.0;
+
+  // GDP影響パス: 150%充足時の最大インパクトを基準に余裕を持たせる
+  const gdpMaxImpact = Math.max(gapAbs * 2, 1);
+  const gdpDomain: [number, number] = [-0.5, Math.ceil(gdpMaxImpact)];
+
+  // インフレ率: ベースライン ± ギャップ影響分
+  const inflDomain: [number, number] = [
+    Math.floor(Math.min(baselineInflation - 1, 0)),
+    Math.ceil(baselineInflation + gapAbs * 0.5 + 1),
+  ];
+
+  // 金利: 0 から ベースライン + 想定最大上昇幅
+  const rateDomain: [number, number] = [0, Math.ceil(baselineJgb + gapAbs + 1)];
+
+  // 為替: ベースライン ± 想定最大変動幅
+  const fxSwing = Math.max(gapAbs * 3, 10);
+  const fxDomain: [number, number] = [
+    Math.floor(baselineFx - fxSwing),
+    Math.ceil(baselineFx + fxSwing / 2),
+  ];
+
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-lg font-semibold mb-1">予測モデル</h2>
@@ -447,7 +475,7 @@ export function PredictionChart() {
           <LineChart data={gdpData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
+            <YAxis tick={{ fontSize: 11 }} domain={gdpDomain} tickFormatter={(v: number) => `${v}%`} />
             <Tooltip formatter={(value: number) => [`${value.toFixed(4)}%`]} />
             <Legend />
             <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
@@ -482,7 +510,7 @@ export function PredictionChart() {
           <LineChart data={inflationData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
+            <YAxis tick={{ fontSize: 11 }} domain={inflDomain} tickFormatter={(v: number) => `${v}%`} />
             <Tooltip formatter={(value: number) => [`${value.toFixed(2)}%`]} />
             <Legend />
             <ReferenceLine y={2} stroke="#dc2626" strokeDasharray="3 3" label={{ value: "BOJ目標 2%", position: "right", fontSize: 10, fill: "#dc2626" }} />
@@ -522,7 +550,7 @@ export function PredictionChart() {
           <LineChart data={rateData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
+            <YAxis tick={{ fontSize: 11 }} domain={rateDomain} tickFormatter={(v: number) => `${v}%`} />
             <Tooltip formatter={(value: number) => [`${value.toFixed(2)}%`]} />
             <Legend />
             <Line
@@ -556,7 +584,7 @@ export function PredictionChart() {
           <LineChart data={fxData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
+            <YAxis tick={{ fontSize: 11 }} domain={fxDomain} />
             <Tooltip formatter={(value: number) => [`${value.toFixed(1)}円`]} />
             <Legend />
             <Line
