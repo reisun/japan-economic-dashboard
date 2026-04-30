@@ -423,15 +423,23 @@ async def get_var_prediction(
 
     # Compute annual spending from gap fill percentage
     annual_spending = -gap_trillion / FISCAL_MULTIPLIER * effective_gap_fill / 100
+    quarterly_spending = annual_spending / 4.0
 
-    # 財政ショック → GDPギャップショック（兆円 → ％ポイント）。
-    # +1兆円の財政拡張 ≈ 乗数1で +(1/nominal_gdp)*100 のギャップ拡大。
-    shock_gap_pct = annual_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
+    # 四半期ごとに支出を注入し、各四半期の IRF を合算（畳み込み）。
+    # 各四半期 t に quarterly_spending 分のショックを注入 → その時点からの IRF を計算。
+    quarterly_shock_pct = quarterly_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
     shock_vec = np.zeros(k)
-    shock_vec[0] = shock_gap_pct
-    shock_response = _compute_irf(A, PREDICTION_STEPS - 1, shock_vec)
-    # ショック応答をベースラインに重畳
-    fc_with_shock = fc + shock_response
+    shock_vec[0] = quarterly_shock_pct
+    # 各注入時点からの IRF を計算し、タイムシフトして合算
+    cumulative_response = np.zeros((PREDICTION_STEPS, k))
+    for inject_q in range(PREDICTION_STEPS):
+        remaining = PREDICTION_STEPS - 1 - inject_q
+        if remaining < 0:
+            continue
+        irf_from_inject = _compute_irf(A, remaining, shock_vec)
+        for h in range(remaining + 1):
+            cumulative_response[inject_q + h] += irf_from_inject[h]
+    fc_with_shock = fc + cumulative_response
 
     # 予測四半期
     future_q = _build_future_quarters(quarters[-1], PREDICTION_STEPS)
@@ -612,24 +620,30 @@ async def get_ar1_prediction(
 
     # Compute annual spending from gap fill percentage
     annual_spending = -gap_trillion / FISCAL_MULTIPLIER * effective_gap_fill / 100
+    quarterly_spending = annual_spending / 4.0
+    quarterly_shock_pct = quarterly_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
 
-    # ショック反映: GDPギャップを直接シフト（同時期に乗数効果が及ぶと仮定）
-    shock_gap_pct = annual_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
-    last_shocked = last_obs.copy()
-    last_shocked[0] = last_obs[0] + shock_gap_pct
+    # 各変数を AR(1) で個別推定
+    ar_params: list[tuple[float, float]] = []
+    for j in range(k):
+        c, phi = _fit_ar1(Y[:, j])
+        ar_params.append((c, phi))
 
-    # 各変数を AR(1) で個別推定・予測
-    # Baseline (no shock) forecast for GDP gap comparison
+    # Baseline forecast (no shock)
     fc_baseline = np.zeros((PREDICTION_STEPS, k))
     for j in range(k):
-        c, phi = _fit_ar1(Y[:, j])
+        c, phi = ar_params[j]
         fc_baseline[:, j] = _forecast_ar1(float(last_obs[j]), c, phi, PREDICTION_STEPS)
 
-    # Shocked forecast
-    fc = np.zeros((PREDICTION_STEPS, k))
-    for j in range(k):
-        c, phi = _fit_ar1(Y[:, j])
-        fc[:, j] = _forecast_ar1(float(last_shocked[j]), c, phi, PREDICTION_STEPS)
+    # Shocked forecast: 四半期ごとに GDP ギャップにショックを注入
+    fc = fc_baseline.copy()
+    c_gap, phi_gap = ar_params[0]
+    for inject_q in range(PREDICTION_STEPS):
+        # inject_q 時点で四半期支出ショックを注入 → 以降の GDP ギャップに AR(1) で伝播
+        shock_effect = quarterly_shock_pct
+        for t in range(inject_q, PREDICTION_STEPS):
+            fc[t, 0] += shock_effect
+            shock_effect *= phi_gap  # AR(1) 減衰
 
     future_q = _build_future_quarters(quarters[-1], PREDICTION_STEPS)
     rate_predictions = [

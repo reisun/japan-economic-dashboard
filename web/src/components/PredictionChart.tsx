@@ -441,79 +441,6 @@ export function PredictionChart() {
 
       <div className="mb-4">
         <h3 className="text-sm font-medium text-gray-700 mb-2">
-          金利予測（JGB 10年）
-        </h3>
-        {data.impact_prediction.assumptions.zlb_binding && (
-          <p className="text-xs text-amber-600 mb-1">
-            ※ ゼロ金利制約により金利下限 0% で切断
-          </p>
-        )}
-        <ResponsiveContainer width="100%" height={180}>
-          <LineChart data={rateData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
-            <Tooltip formatter={(value: number) => [`${value.toFixed(2)}%`]} />
-            <Legend />
-            <Line
-              type="monotone"
-              dataKey="actual"
-              name="実績"
-              stroke="#2563eb"
-              strokeWidth={2}
-              dot={{ r: 4 }}
-              connectNulls
-            />
-            <Line
-              type="monotone"
-              dataKey="prediction"
-              name="予測"
-              stroke="#2563eb"
-              strokeWidth={2}
-              strokeDasharray="5 5"
-              dot={{ r: 4 }}
-              connectNulls
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-medium text-gray-700 mb-2">
-          為替予測（USD/JPY）
-        </h3>
-        <ResponsiveContainer width="100%" height={180}>
-          <LineChart data={fxData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-            <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
-            <Tooltip formatter={(value: number) => [`${value.toFixed(1)}円`]} />
-            <Legend />
-            <Line
-              type="monotone"
-              dataKey="actual"
-              name="実績"
-              stroke="#d97706"
-              strokeWidth={2}
-              dot={{ r: 4 }}
-              connectNulls
-            />
-            <Line
-              type="monotone"
-              dataKey="prediction"
-              name="予測"
-              stroke="#d97706"
-              strokeWidth={2}
-              strokeDasharray="5 5"
-              dot={{ r: 4 }}
-              connectNulls
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="mb-4">
-        <h3 className="text-sm font-medium text-gray-700 mb-2">
           GDP影響パス（ベースライン比）
         </h3>
         <ResponsiveContainer width="100%" height={180}>
@@ -573,6 +500,79 @@ export function PredictionChart() {
               dataKey="prediction"
               name="予測"
               stroke="#7c3aed"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              dot={{ r: 4 }}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mb-4">
+        <h3 className="text-sm font-medium text-gray-700 mb-2">
+          金利予測（JGB 10年）
+        </h3>
+        {data.impact_prediction.assumptions.zlb_binding && (
+          <p className="text-xs text-amber-600 mb-1">
+            ※ ゼロ金利制約により金利下限 0% で切断
+          </p>
+        )}
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={rateData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
+            <Tooltip formatter={(value: number) => [`${value.toFixed(2)}%`]} />
+            <Legend />
+            <Line
+              type="monotone"
+              dataKey="actual"
+              name="実績"
+              stroke="#2563eb"
+              strokeWidth={2}
+              dot={{ r: 4 }}
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="prediction"
+              name="予測"
+              stroke="#2563eb"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              dot={{ r: 4 }}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mb-4">
+        <h3 className="text-sm font-medium text-gray-700 mb-2">
+          為替予測（USD/JPY）
+        </h3>
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={fxData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
+            <Tooltip formatter={(value: number) => [`${value.toFixed(1)}円`]} />
+            <Legend />
+            <Line
+              type="monotone"
+              dataKey="actual"
+              name="実績"
+              stroke="#d97706"
+              strokeWidth={2}
+              dot={{ r: 4 }}
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="prediction"
+              name="予測"
+              stroke="#d97706"
               strokeWidth={2}
               strokeDasharray="5 5"
               dot={{ r: 4 }}
