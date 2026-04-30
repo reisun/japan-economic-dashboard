@@ -400,10 +400,11 @@ export function PredictionChart() {
   const gdpMaxImpact = Math.max(gapAbs * 2, 1);
   const gdpDomain: [number, number] = [-0.5, Math.ceil(gdpMaxImpact)];
 
-  // インフレ率: ベースライン ± ギャップ影響分
+  // インフレ率: ベースライン周辺に絞り、変化を視認しやすくする
+  const maxInflImpact = 0.3 * gdpMaxImpact;  // Phillips curve slope × GDP max impact
   const inflDomain: [number, number] = [
-    Math.floor(Math.min(baselineInflation - 1, 0)),
-    Math.ceil(baselineInflation + gapAbs * 0.5 + 1),
+    Math.floor(baselineInflation - maxInflImpact - 0.5),
+    Math.ceil(baselineInflation + maxInflImpact + 0.5),
   ];
 
   // 金利: 0 から ベースライン + 想定最大上昇幅
