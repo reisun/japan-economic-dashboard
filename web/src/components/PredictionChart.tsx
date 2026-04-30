@@ -62,11 +62,13 @@ const ENGINE_DESCRIPTION: Record<PredictionEngine, string> = {
   ar1: "AR(1): 各変数を前期値だけで個別に予測するベンチマーク。最も単純なため、他モデルの精度比較の基準になります。",
 };
 
-// シナリオ入力の範囲（API 側と揃える）
-const SCENARIO_MIN = -200;
-const SCENARIO_MAX = 200;
-const SCENARIO_STEP = 0.5;
 const DEBOUNCE_MS = 500;
+
+// GDPギャップ充足率の範囲
+const GAP_FILL_MIN = 0;
+const GAP_FILL_MAX = 150;
+const GAP_FILL_STEP = 5;
+const GAP_FILL_DEFAULT = 100;
 
 // UIP感応度の範囲
 const UIP_MIN = 0;
@@ -76,7 +78,7 @@ const UIP_DEFAULT = 2.0;
 
 function buildPredictionPath(
   method: GdpGapMethod,
-  scenario: number | null,
+  gapFill: number,
   engine: PredictionEngine,
   uipSensitivity: number | null = null,
 ): string {
@@ -91,9 +93,7 @@ function buildPredictionPath(
   const params = new URLSearchParams();
   params.set("method", method);
   params.set("engine", engine);
-  if (scenario !== null && !Number.isNaN(scenario)) {
-    params.set("fiscal_spending_trillion", String(scenario));
-  }
+  params.append(`gap_fill_percent`, String(gapFill));
   if (uipSensitivity !== null && !Number.isNaN(uipSensitivity)) {
     params.set("uip_sensitivity", String(uipSensitivity));
   }
@@ -132,41 +132,31 @@ function splitInflationData(data: PredictionResponse): InflationChartPoint[] {
   }));
 }
 
-function clampScenario(v: number): number {
-  if (Number.isNaN(v)) return 0;
-  return Math.max(SCENARIO_MIN, Math.min(SCENARIO_MAX, v));
-}
-
 export function PredictionChart() {
   const [method, setMethod] = useState<GdpGapMethod>("maximum");
   const [engine, setEngine] = useState<PredictionEngine>("is_lm");
 
-  // シナリオ入力（ユーザー操作中のローカル値, null=自動）
-  const [scenarioInput, setScenarioInput] = useState<number | null>(null);
-  // API に投げるための debounce 済み値
-  const [debouncedScenario, setDebouncedScenario] = useState<number | null>(
-    null,
-  );
-  // <input> のテキスト表現（途中入力で "" や "-" を許容するため文字列を別管理）
-  const [scenarioText, setScenarioText] = useState<string>("");
+  // GDPギャップ充足率
+  const [gapFillPercent, setGapFillPercent] = useState(GAP_FILL_DEFAULT);
+  const [debouncedGapFill, setDebouncedGapFill] = useState(GAP_FILL_DEFAULT);
 
   // UIP感応度（null=デフォルト値を使用）
   const [uipInput, setUipInput] = useState<number | null>(null);
   const [debouncedUip, setDebouncedUip] = useState<number | null>(null);
 
-  // debounce: scenarioInput → debouncedScenario
+  // debounce: gapFillPercent → debouncedGapFill
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
     debounceRef.current = setTimeout(() => {
-      setDebouncedScenario(scenarioInput);
+      setDebouncedGapFill(gapFillPercent);
     }, DEBOUNCE_MS);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [scenarioInput]);
+  }, [gapFillPercent]);
 
   // debounce: uipInput → debouncedUip
   const uipDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -182,16 +172,15 @@ export function PredictionChart() {
     };
   }, [uipInput]);
 
-  // method / engine 切替時はシナリオを自動に戻す
+  // method / engine 切替時はパラメータをデフォルトに戻す
   useEffect(() => {
-    setScenarioInput(null);
-    setScenarioText("");
-    setDebouncedScenario(null);
+    setGapFillPercent(GAP_FILL_DEFAULT);
+    setDebouncedGapFill(GAP_FILL_DEFAULT);
     setUipInput(null);
     setDebouncedUip(null);
   }, [method, engine]);
 
-  const path = buildPredictionPath(method, debouncedScenario, engine, debouncedUip);
+  const path = buildPredictionPath(method, debouncedGapFill, engine, debouncedUip);
   const { data, loading, error } = useApi<PredictionResponse>(path);
 
   const tabs: { key: GdpGapMethod; label: string }[] = [
@@ -262,113 +251,41 @@ export function PredictionChart() {
     </div>
   );
 
-  const handleScenarioChange = (value: number) => {
-    const clamped = clampScenario(value);
-    setScenarioInput(clamped);
-    setScenarioText(String(clamped));
-  };
-
-  const handleTextChange = (text: string) => {
-    setScenarioText(text);
-    if (text === "" || text === "-" || text === "+") {
-      // 入力途中: API は呼ばない（自動状態にも戻さない）
-      return;
-    }
-    const parsed = Number(text);
-    if (!Number.isNaN(parsed)) {
-      setScenarioInput(clampScenario(parsed));
-    }
-  };
-
-  const handleAutoReset = () => {
-    setScenarioInput(null);
-    setScenarioText("");
-    setDebouncedScenario(null);
-  };
-
-  // サマリーから自動算出値（auto モード時のフォールバック含む）
-  const autoAmount =
-    data?.required_fiscal_spending.auto_amount_trillion_yen ??
-    (data?.required_fiscal_spending.scenario_mode === "auto"
-      ? data?.required_fiscal_spending.amount_trillion_yen
-      : undefined);
-
-  const isUserScenario =
-    !STATIC_MODE && data?.required_fiscal_spending.scenario_mode === "user";
-
-  // 入力値（スライダー / 数値入力で表示する値）。null のときは自動算出値を表示。
-  const displayScenarioValue =
-    scenarioInput !== null
-      ? scenarioInput
-      : (autoAmount ?? 0);
-
-  const renderScenarioPanel = () => {
+  const renderGapFillPanel = () => {
     const disabled = STATIC_MODE;
-    const tooltip = disabled
-      ? "静的モードでは利用不可"
-      : undefined;
     return (
       <div className="bg-gray-50 border border-gray-200 rounded p-3 mb-4">
         <div className="flex items-baseline justify-between mb-2 gap-2 flex-wrap">
           <h3 className="text-sm font-medium text-gray-800">
-            シナリオ入力（任意の財政支出額）
+            GDPギャップ充足率
           </h3>
-          {isUserScenario && autoAmount !== undefined && (
-            <span className="text-xs text-gray-500">
-              自動算出値: {autoAmount.toFixed(1)}兆円
-            </span>
-          )}
+          <span className="text-sm font-bold text-gray-800">
+            {gapFillPercent}%
+          </span>
         </div>
-        <p className="text-xs text-gray-500 mb-3">
-          任意の財政支出額（兆円）を入力すると、IS-LM
-          モデルで金利・為替への影響を再計算します。
-          <br />
-          正値: 拡張的財政支出 / 負値: 引き締め
-        </p>
-        <div
-          className="flex flex-wrap items-center gap-3"
-          title={tooltip}
-        >
-          <input
-            type="number"
-            step={SCENARIO_STEP}
-            min={SCENARIO_MIN}
-            max={SCENARIO_MAX}
-            value={scenarioText !== "" ? scenarioText : (scenarioInput !== null ? String(scenarioInput) : "")}
-            placeholder={
-              autoAmount !== undefined
-                ? `${autoAmount.toFixed(1)} (自動)`
-                : "自動"
-            }
-            onChange={(e) => handleTextChange(e.target.value)}
-            disabled={disabled}
-            className="w-28 px-2 py-1 text-sm border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400"
-            aria-label="財政支出額（兆円）"
-          />
-          <span className="text-xs text-gray-500">兆円</span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-gray-500">{GAP_FILL_MIN}%</span>
           <input
             type="range"
-            step={SCENARIO_STEP}
-            min={SCENARIO_MIN}
-            max={SCENARIO_MAX}
-            value={displayScenarioValue}
-            onChange={(e) => handleScenarioChange(Number(e.target.value))}
+            step={GAP_FILL_STEP}
+            min={GAP_FILL_MIN}
+            max={GAP_FILL_MAX}
+            value={gapFillPercent}
+            onChange={(e) => setGapFillPercent(Number(e.target.value))}
             disabled={disabled}
             className="flex-1 min-w-[140px] disabled:opacity-50"
-            aria-label="財政支出額スライダー"
+            aria-label="GDPギャップ充足率スライダー"
           />
-          <button
-            type="button"
-            onClick={handleAutoReset}
-            disabled={disabled || scenarioInput === null}
-            className="px-3 py-1 text-xs font-medium border border-gray-300 rounded bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            自動
-          </button>
+          <span className="text-xs text-gray-500">{GAP_FILL_MAX}%</span>
+        </div>
+        <div className="flex gap-4 mt-1 text-xs text-gray-400">
+          <span>50%</span>
+          <span>100%</span>
+          <span>150%</span>
         </div>
         {disabled && (
           <p className="text-xs text-gray-400 mt-2">
-            ※ 静的モードではシナリオ入力は利用できません
+            ※ 静的モードでは充足率の変更は利用できません
           </p>
         )}
       </div>
@@ -502,22 +419,12 @@ export function PredictionChart() {
             ({data.current_gap.gdp_gap_trillion_yen}兆円)
           </p>
         </div>
-        <div
-          className={
-            "rounded p-3 " +
-            (isUserScenario ? "bg-amber-50" : "bg-green-50")
-          }
-        >
+        <div className="rounded p-3 bg-green-50">
           <p className="text-xs text-gray-600">
-            {isUserScenario ? "シナリオ財政支出" : "必要財政支出"}
+            GDPギャップ充足率: {data.required_fiscal_spending.gap_fill_percent}%
           </p>
-          <p
-            className={
-              "text-lg font-bold " +
-              (isUserScenario ? "text-amber-900" : "text-green-900")
-            }
-          >
-            {data.required_fiscal_spending.amount_trillion_yen}兆円
+          <p className="text-lg font-bold text-green-900">
+            年間財政支出: {data.required_fiscal_spending.amount_trillion_yen}兆円
           </p>
           <p className="text-xs text-gray-500">
             {data.required_fiscal_spending.note}
@@ -525,7 +432,7 @@ export function PredictionChart() {
         </div>
       </div>
 
-      {renderScenarioPanel()}
+      {renderGapFillPanel()}
       {renderUipPanel()}
 
       {loading && (
@@ -707,6 +614,9 @@ export function PredictionChart() {
           )}
           {data.impact_prediction.assumptions.baseline_inflation != null && (
             <div>ベースラインインフレ率: {data.impact_prediction.assumptions.baseline_inflation}%</div>
+          )}
+          {data.impact_prediction.assumptions.multiplier_decay_rate != null && (
+            <div>乗数減衰率: {data.impact_prediction.assumptions.multiplier_decay_rate}/四半期</div>
           )}
           {data.impact_prediction.assumptions.lag_order != null && (
             <div>ラグ次数: {data.impact_prediction.assumptions.lag_order}</div>
