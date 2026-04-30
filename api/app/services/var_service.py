@@ -44,10 +44,7 @@ from app.models.schemas import (
 )
 from app.services.gdp_gap_service import get_gdp_gap
 from app.services.inflation_service import get_inflation
-from app.services.prediction_service import (
-    PHILLIPS_CURVE_SLOPE,
-    _get_nominal_gdp,
-)
+from app.services.prediction_service import _get_nominal_gdp
 from app.services.rates_service import get_rates
 
 logger = logging.getLogger(__name__)
@@ -426,19 +423,17 @@ async def get_var_prediction(
 
     # Compute annual spending from gap fill percentage
     annual_spending = -gap_trillion / FISCAL_MULTIPLIER * effective_gap_fill / 100
-    quarterly_spending = annual_spending / 4.0
 
-    # 四半期ごとに支出を注入し、各四半期の IRF を合算（畳み込み）。
-    # 各四半期 t に quarterly_spending 分のショックを注入 → その時点からの IRF を計算。
-    quarterly_shock_pct = quarterly_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
+    # 年1回のショック注入（VAR の IRF 特性を活かす）。
+    # Year 1 (Q0) と Year 2 (Q4) に年間支出額を一括注入。
+    annual_shock_pct = annual_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
     shock_vec = np.zeros(k)
-    shock_vec[0] = quarterly_shock_pct
-    # 各注入時点からの IRF を計算し、タイムシフトして合算
+    shock_vec[0] = annual_shock_pct
     cumulative_response = np.zeros((PREDICTION_STEPS, k))
-    for inject_q in range(PREDICTION_STEPS):
-        remaining = PREDICTION_STEPS - 1 - inject_q
-        if remaining < 0:
+    for inject_q in [0, 4]:
+        if inject_q >= PREDICTION_STEPS:
             continue
+        remaining = PREDICTION_STEPS - 1 - inject_q
         irf_from_inject = _compute_irf(A, remaining, shock_vec)
         for h in range(remaining + 1):
             cumulative_response[inject_q + h] += irf_from_inject[h]
@@ -494,8 +489,7 @@ async def get_var_prediction(
         for i in range(PREDICTION_STEPS)
     ]
 
-    # Inflation prediction: VAR forecast + Phillips curve correction for fiscal impact
-    gdp_impacts = [float(fc_with_shock[i, 0] - fc[i, 0]) for i in range(PREDICTION_STEPS)]
+    # Inflation prediction: VAR の動学がショックの CPI 波及を決定
     inflation_predictions = [
         InflationPredictionPoint(
             date=quarters[-1],
@@ -505,10 +499,7 @@ async def get_var_prediction(
     ] + [
         InflationPredictionPoint(
             date=future_q[i],
-            predicted_inflation_percent=round(
-                float(fc_with_shock[i, 3]) + PHILLIPS_CURVE_SLOPE * gdp_impacts[i],
-                2,
-            ),
+            predicted_inflation_percent=round(float(fc_with_shock[i, 3]), 2),
             type="prediction",
         )
         for i in range(PREDICTION_STEPS)
@@ -627,8 +618,7 @@ async def get_ar1_prediction(
 
     # Compute annual spending from gap fill percentage
     annual_spending = -gap_trillion / FISCAL_MULTIPLIER * effective_gap_fill / 100
-    quarterly_spending = annual_spending / 4.0
-    quarterly_shock_pct = quarterly_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
+    annual_shock_pct = annual_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
 
     # 各変数を AR(1) で個別推定
     ar_params: list[tuple[float, float]] = []
@@ -642,15 +632,16 @@ async def get_ar1_prediction(
         c, phi = ar_params[j]
         fc_baseline[:, j] = _forecast_ar1(float(last_obs[j]), c, phi, PREDICTION_STEPS)
 
-    # Shocked forecast: 四半期ごとに GDP ギャップにショックを注入
+    # Shocked forecast: 年1回（Q0, Q4）に年間支出額を一括注入
     fc = fc_baseline.copy()
     c_gap, phi_gap = ar_params[0]
-    for inject_q in range(PREDICTION_STEPS):
-        # inject_q 時点で四半期支出ショックを注入 → 以降の GDP ギャップに AR(1) で伝播
-        shock_effect = quarterly_shock_pct
+    for inject_q in [0, 4]:
+        if inject_q >= PREDICTION_STEPS:
+            continue
+        shock_effect = annual_shock_pct
         for t in range(inject_q, PREDICTION_STEPS):
             fc[t, 0] += shock_effect
-            shock_effect *= phi_gap  # AR(1) 減衰
+            shock_effect *= phi_gap
 
     future_q = _build_future_quarters(quarters[-1], PREDICTION_STEPS)
     rate_predictions = [
@@ -700,8 +691,7 @@ async def get_ar1_prediction(
         for i in range(PREDICTION_STEPS)
     ]
 
-    # Inflation prediction: AR(1) forecast + Phillips curve correction for fiscal impact
-    gdp_impacts_ar = [float(fc[i, 0] - fc_baseline[i, 0]) for i in range(PREDICTION_STEPS)]
+    # Inflation prediction: AR(1) は変数間波及なし → ベースライン予測をそのまま使用
     inflation_predictions = [
         InflationPredictionPoint(
             date=quarters[-1],
@@ -711,10 +701,7 @@ async def get_ar1_prediction(
     ] + [
         InflationPredictionPoint(
             date=future_q[i],
-            predicted_inflation_percent=round(
-                float(fc_baseline[i, 3]) + PHILLIPS_CURVE_SLOPE * gdp_impacts_ar[i],
-                2,
-            ),
+            predicted_inflation_percent=round(float(fc_baseline[i, 3]), 2),
             type="prediction",
         )
         for i in range(PREDICTION_STEPS)
