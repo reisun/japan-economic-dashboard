@@ -136,8 +136,8 @@ async def _build_panel(method: str) -> tuple[list[str], np.ndarray]:
     ]
     jgb_q = _aggregate_to_quarterly(boj_dicts, "jgb_10y_yield")
 
-    # USD/JPY（FRED 優先 → Yahoo フォールバック）
-    fx_points = rates.exchange_rates.fred or rates.exchange_rates.yahoo_finance
+    # USD/JPY（FRED）
+    fx_points = rates.exchange_rates.fred
     fx_dicts = [{"date": p.date, "usdjpy": p.usdjpy} for p in fx_points]
     fx_q = _aggregate_to_quarterly(fx_dicts, "usdjpy")
 

@@ -4,7 +4,6 @@ Real data sources:
   - FRED API: fredapi library (requires FRED_API_KEY env var)
     Series: DGS10 (US 10Y), FEDFUNDS, DEXJPUS (USD/JPY)
     Series: IRSTCI01JPM156N (Japan call rate), IRLTLT01JPM156N (Japan 10Y JGB)
-  - Yahoo Finance: yfinance library, ticker "JPY=X"
 
 Each source falls back to mock data independently on failure.
 """
@@ -50,10 +49,6 @@ _MOCK_FRED_RATES: list[dict] = [
 _MOCK_BOJ_RATES: list[dict] = [
     {"date": d, "policy_rate": round(-0.10 + i * 0.02, 2), "jgb_10y_yield": round(0.60 + i * 0.03, 2)}
     for i, d in enumerate(_DATES)
-]
-
-_MOCK_YAHOO_FX: list[dict] = [
-    {"date": d, "usdjpy": round(148.0 + i * 0.5, 1)} for i, d in enumerate(_DATES)
 ]
 
 _MOCK_FRED_FX: list[dict] = [
@@ -149,29 +144,6 @@ def _fetch_fred_fx() -> list[ExchangeRateDataPoint] | None:
         return None
 
 
-@cached("yahoo_fx")
-def _fetch_yahoo_fx() -> list[ExchangeRateDataPoint] | None:
-    """Fetch USD/JPY from Yahoo Finance."""
-    try:
-        import yfinance as yf
-
-        ticker = yf.Ticker("JPY=X")
-        hist = ticker.history(period="max", interval="1mo")
-        if hist.empty:
-            return None
-        results = [
-            ExchangeRateDataPoint(
-                date=dt.strftime("%Y-%m-%d"),
-                usdjpy=round(float(row["Close"]), 1),
-            )
-            for dt, row in hist.iterrows()
-        ]
-        return results if results else None
-    except Exception:
-        logger.exception("Yahoo Finance FX fetch failed")
-        return None
-
-
 @cached("boj_rates")
 def _fetch_boj_rates() -> list[BojRateDataPoint] | None:
     """Fetch Japan interest rates from FRED (OECD via FRED).
@@ -255,12 +227,6 @@ async def get_rates() -> RatesResponse:
     if boj_rates is None:
         boj_rates = [BojRateDataPoint(**d) for d in _MOCK_BOJ_RATES]
 
-    # Yahoo Finance FX
-    yahoo_fx = _fetch_yahoo_fx()
-    status["yahoo_fx"] = "real" if yahoo_fx else "mock"
-    if yahoo_fx is None:
-        yahoo_fx = [ExchangeRateDataPoint(**d) for d in _MOCK_YAHOO_FX]
-
     # FRED FX
     fred_fx = _fetch_fred_fx()
     status["fred_fx"] = "real" if fred_fx else "mock"
@@ -272,11 +238,10 @@ async def get_rates() -> RatesResponse:
     # 共通レンジ（GDPギャップ実績期間）に揃える
     fred_rates = filter_to_actual_range(fred_rates, label="fred_rates")
     boj_rates = filter_to_actual_range(boj_rates, label="boj_rates")
-    yahoo_fx = filter_to_actual_range(yahoo_fx, label="yahoo_fx")
     fred_fx = filter_to_actual_range(fred_fx, label="fred_fx")
 
     return RatesResponse(
         interest_rates=InterestRates(fred=fred_rates, boj=boj_rates),
-        exchange_rates=ExchangeRates(yahoo_finance=yahoo_fx, fred=fred_fx),
+        exchange_rates=ExchangeRates(fred=fred_fx),
         data_status=status,
     )

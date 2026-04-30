@@ -58,12 +58,7 @@ function mergeRateData(data: RatesResponse): MergedRatePoint[] {
 function mergeFxData(data: RatesResponse): MergedFxPoint[] {
   const map = new Map<string, MergedFxPoint>();
 
-  const sources = [
-    ...data.exchange_rates.yahoo_finance,
-    ...data.exchange_rates.fred,
-  ];
-
-  for (const point of sources) {
+  for (const point of data.exchange_rates.fred) {
     if (!map.has(point.date)) {
       map.set(point.date, { date: point.date, usdjpy: point.usdjpy });
     }
@@ -106,7 +101,7 @@ export function RatesChart() {
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-lg font-semibold mb-1">金利・為替</h2>
       <p className="text-xs text-gray-500 mb-1">
-        出典: FRED / 日銀 / Yahoo Finance
+        出典: FRED / 日銀
       </p>
       <div className="mb-3">
         <DataStatusBadges
@@ -114,7 +109,6 @@ export function RatesChart() {
           labels={{
             fred_rates: "米金利(FRED)",
             boj_rates: "日本金利",
-            yahoo_fx: "為替(Yahoo)",
             fred_fx: "為替(FRED)",
           }}
         />

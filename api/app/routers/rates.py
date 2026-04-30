@@ -29,11 +29,6 @@ async def rates():
     yearly_boj = monthly_to_yearly(boj_dicts, ["policy_rate", "jgb_10y_yield"])
     resp.interest_rates.boj = [BojRateDataPoint(**d) for d in yearly_boj]
 
-    # Yahoo FX
-    yahoo_dicts = [d.model_dump() for d in resp.exchange_rates.yahoo_finance]
-    yearly_yahoo = monthly_to_yearly(yahoo_dicts, ["usdjpy"])
-    resp.exchange_rates.yahoo_finance = [ExchangeRateDataPoint(**d) for d in yearly_yahoo]
-
     # FRED FX
     fred_fx_dicts = [d.model_dump() for d in resp.exchange_rates.fred]
     yearly_fred_fx = monthly_to_yearly(fred_fx_dicts, ["usdjpy"])
