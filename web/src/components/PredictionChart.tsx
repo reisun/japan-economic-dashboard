@@ -7,11 +7,14 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
 import { STATIC_MODE, useApi } from "../hooks/useApi";
 import type {
   GdpGapMethod,
+  GdpImpactPoint,
+  InflationPredictionPoint,
   PredictionEngine,
   PredictionResponse,
 } from "../types/api";
@@ -23,6 +26,18 @@ interface RateChartPoint {
 }
 
 interface FxChartPoint {
+  date: string;
+  actual: number | null;
+  prediction: number | null;
+}
+
+interface GdpChartPoint {
+  date: string;
+  actual: number | null;
+  prediction: number | null;
+}
+
+interface InflationChartPoint {
   date: string;
   actual: number | null;
   prediction: number | null;
@@ -98,6 +113,22 @@ function splitFxData(data: PredictionResponse): FxChartPoint[] {
     date: point.date,
     actual: point.type === "actual" ? point.predicted_usdjpy : null,
     prediction: point.type === "prediction" ? point.predicted_usdjpy : null,
+  }));
+}
+
+function splitGdpData(data: PredictionResponse): GdpChartPoint[] {
+  return data.impact_prediction.gdp_impact.map((point: GdpImpactPoint) => ({
+    date: point.date,
+    actual: point.type === "actual" ? point.predicted_gdp_change_percent : null,
+    prediction: point.type === "prediction" ? point.predicted_gdp_change_percent : null,
+  }));
+}
+
+function splitInflationData(data: PredictionResponse): InflationChartPoint[] {
+  return data.impact_prediction.inflation_prediction.map((point: InflationPredictionPoint) => ({
+    date: point.date,
+    actual: point.type === "actual" ? point.predicted_inflation_percent : null,
+    prediction: point.type === "prediction" ? point.predicted_inflation_percent : null,
   }));
 }
 
@@ -437,6 +468,8 @@ export function PredictionChart() {
 
   const rateData = splitRateData(data);
   const fxData = splitFxData(data);
+  const gdpData = splitGdpData(data);
+  const inflationData = splitInflationData(data);
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
@@ -572,6 +605,76 @@ export function PredictionChart() {
         </ResponsiveContainer>
       </div>
 
+      <div className="mb-4">
+        <h3 className="text-sm font-medium text-gray-700 mb-2">
+          GDP影響パス（ベースライン比）
+        </h3>
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={gdpData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
+            <Tooltip formatter={(value: number) => [`${value.toFixed(4)}%`]} />
+            <Legend />
+            <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
+            <Line
+              type="monotone"
+              dataKey="actual"
+              name="実績"
+              stroke="#059669"
+              strokeWidth={2}
+              dot={{ r: 4 }}
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="prediction"
+              name="予測"
+              stroke="#059669"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              dot={{ r: 4 }}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mb-4">
+        <h3 className="text-sm font-medium text-gray-700 mb-2">
+          インフレ率予測（フィリップス曲線）
+        </h3>
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={inflationData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${v}%`} />
+            <Tooltip formatter={(value: number) => [`${value.toFixed(2)}%`]} />
+            <Legend />
+            <ReferenceLine y={2} stroke="#dc2626" strokeDasharray="3 3" label={{ value: "BOJ目標 2%", position: "right", fontSize: 10, fill: "#dc2626" }} />
+            <Line
+              type="monotone"
+              dataKey="actual"
+              name="実績"
+              stroke="#7c3aed"
+              strokeWidth={2}
+              dot={{ r: 4 }}
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="prediction"
+              name="予測"
+              stroke="#7c3aed"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              dot={{ r: 4 }}
+              connectNulls
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
       {/* モデル仮定（collapsible） */}
       <details className="mt-4 text-xs">
         <summary className="cursor-pointer text-gray-500 hover:text-gray-700 select-none">
@@ -598,6 +701,12 @@ export function PredictionChart() {
           )}
           {data.impact_prediction.assumptions.zlb_binding != null && (
             <div>ゼロ金利制約: {data.impact_prediction.assumptions.zlb_binding ? "有効（流動性の罠）" : "非拘束"}</div>
+          )}
+          {data.impact_prediction.assumptions.phillips_curve_slope != null && (
+            <div>フィリップス曲線の傾き: {data.impact_prediction.assumptions.phillips_curve_slope}</div>
+          )}
+          {data.impact_prediction.assumptions.baseline_inflation != null && (
+            <div>ベースラインインフレ率: {data.impact_prediction.assumptions.baseline_inflation}%</div>
           )}
           {data.impact_prediction.assumptions.lag_order != null && (
             <div>ラグ次数: {data.impact_prediction.assumptions.lag_order}</div>

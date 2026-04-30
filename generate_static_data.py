@@ -558,6 +558,8 @@ NOMINAL_GDP = 560.0
 BASELINE_JGB_10Y = 0.85
 BASELINE_USDJPY = 150.0
 UIP_SENSITIVITY = 2.0
+PHILLIPS_CURVE_SLOPE = 0.3
+BASELINE_INFLATION_FALLBACK = 2.0
 PREDICTION_QUARTERS = ["2025-Q1", "2025-Q2", "2025-Q3", "2025-Q4"]
 
 
@@ -589,8 +591,16 @@ def generate_prediction(method="maximum"):
 
     phase_in = [0.0, 0.33, 0.67, 1.0]
 
+    # GDP impact: fiscal spending effect on GDP (% change from baseline)
+    total_gdp_change_pct = required_spending * FISCAL_MULTIPLIER / NOMINAL_GDP * 100
+
+    # Baseline inflation from mock data
+    baseline_inflation = MOCK_INFLATION[-1]["cpi_core_core"] if MOCK_INFLATION else BASELINE_INFLATION_FALLBACK
+
     interest_predictions = []
     exchange_predictions = []
+    gdp_impact_predictions = []
+    inflation_predictions = []
 
     for i, frac in enumerate(phase_in):
         dr = total_dr * frac
@@ -605,6 +615,19 @@ def generate_prediction(method="maximum"):
         exchange_predictions.append({
             "date": PREDICTION_QUARTERS[i],
             "predicted_usdjpy": fx,
+            "type": "actual" if i == 0 else "prediction",
+        })
+        gdp_impact_predictions.append({
+            "date": PREDICTION_QUARTERS[i],
+            "predicted_gdp_change_percent": round(total_gdp_change_pct * frac, 4),
+            "type": "actual" if i == 0 else "prediction",
+        })
+        inflation_predictions.append({
+            "date": PREDICTION_QUARTERS[i],
+            "predicted_inflation_percent": round(
+                baseline_inflation + PHILLIPS_CURVE_SLOPE * (gap_pct + total_gdp_change_pct * frac),
+                2,
+            ),
             "type": "actual" if i == 0 else "prediction",
         })
 
@@ -625,12 +648,16 @@ def generate_prediction(method="maximum"):
         "impact_prediction": {
             "interest_rate": interest_predictions,
             "exchange_rate": exchange_predictions,
+            "gdp_impact": gdp_impact_predictions,
+            "inflation_prediction": inflation_predictions,
             "model": "IS-LM",
             "engine": "is_lm",
             "assumptions": {
                 "money_demand_elasticity": MONEY_DEMAND_ELASTICITY,
                 "investment_sensitivity": INVESTMENT_SENSITIVITY,
                 "fiscal_multiplier": FISCAL_MULTIPLIER,
+                "phillips_curve_slope": PHILLIPS_CURVE_SLOPE,
+                "baseline_inflation": baseline_inflation,
             },
         },
     }
@@ -938,6 +965,22 @@ def generate_prediction_var(method="maximum"):
         for i in range(VAR_PREDICTION_STEPS)
     ]
 
+    # GDP impact: difference between shocked and baseline GDP gap forecasts
+    gdp_impact_predictions = [
+        {"date": quarters[-1], "predicted_gdp_change_percent": 0.0, "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_gdp_change_percent": round(fc[i][0] - base_fc[i][0], 4), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+
+    # Inflation prediction: CPI core-core from shocked forecast
+    inflation_predictions = [
+        {"date": quarters[-1], "predicted_inflation_percent": round(last_obs[3], 2), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_inflation_percent": round(fc[i][3], 2), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+
     # 単位ショック (+1兆円相当) IRF
     unit_shock = [1.0 / VAR_NOMINAL_GDP * 100.0, 0.0, 0.0, 0.0]
     irf = _irf_var1(A, VAR_PREDICTION_STEPS, unit_shock)
@@ -967,6 +1010,8 @@ def generate_prediction_var(method="maximum"):
         "impact_prediction": {
             "interest_rate": interest_predictions,
             "exchange_rate": exchange_predictions,
+            "gdp_impact": gdp_impact_predictions,
+            "inflation_prediction": inflation_predictions,
             "model": "VAR(1)",
             "engine": "var",
             "assumptions": {
@@ -995,6 +1040,14 @@ def generate_prediction_ar1(method="maximum"):
     last_shocked = list(last_obs)
     last_shocked[0] = last_obs[0] + shock_gap_pct
 
+    # Baseline (no shock) forecast for GDP gap comparison
+    fc_baseline = []
+    for j in range(4):
+        col = [Y[t][j] for t in range(T)]
+        c, phi = _fit_ar1_static(col)
+        fc_baseline.append(_forecast_ar1_static(last_obs[j], c, phi, VAR_PREDICTION_STEPS))
+
+    # Shocked forecast
     fc = []
     for j in range(4):
         col = [Y[t][j] for t in range(T)]
@@ -1015,6 +1068,22 @@ def generate_prediction_ar1(method="maximum"):
         for i in range(VAR_PREDICTION_STEPS)
     ]
 
+    # GDP impact: difference between shocked and baseline GDP gap forecasts
+    gdp_impact_predictions = [
+        {"date": quarters[-1], "predicted_gdp_change_percent": 0.0, "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_gdp_change_percent": round(fc[0][i] - fc_baseline[0][i], 4), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+
+    # Inflation prediction: CPI core-core from shocked forecast
+    inflation_predictions = [
+        {"date": quarters[-1], "predicted_inflation_percent": round(last_obs[3], 2), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_inflation_percent": round(fc[3][i], 2), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+
     return {
         "current_gap": {
             "gdp_gap_percent": round(gap_pct, 2),
@@ -1030,6 +1099,8 @@ def generate_prediction_ar1(method="maximum"):
         "impact_prediction": {
             "interest_rate": interest_predictions,
             "exchange_rate": exchange_predictions,
+            "gdp_impact": gdp_impact_predictions,
+            "inflation_prediction": inflation_predictions,
             "model": "AR(1)",
             "engine": "ar1",
             "assumptions": {

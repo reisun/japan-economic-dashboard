@@ -151,11 +151,28 @@ class Assumptions(BaseModel):
     baseline_usdjpy: float | None = None
     # ゼロ金利制約
     zlb_binding: bool | None = None
+    # フィリップス曲線パラメータ
+    phillips_curve_slope: float | None = None  # フィリップス曲線の傾き
+    baseline_inflation: float | None = None  # ベースラインインフレ率
     # 統計モデル用パラメータ
     lag_order: int | None = None
     n_obs: int | None = None
     n_steps: int | None = None
     variables: list[str] | None = None
+
+
+class GdpImpactPoint(BaseModel):
+    """GDP影響パスの1点。財政支出によるGDP変化率（ベースラインからの乖離、%）。"""
+    date: str
+    predicted_gdp_change_percent: float
+    type: str = "prediction"  # "actual" | "prediction"
+
+
+class InflationPredictionPoint(BaseModel):
+    """フィリップス曲線に基づくインフレ率予測の1点。"""
+    date: str
+    predicted_inflation_percent: float
+    type: str = "prediction"  # "actual" | "prediction"
 
 
 class IrfPoint(BaseModel):
@@ -173,6 +190,8 @@ class IrfPoint(BaseModel):
 class ImpactPrediction(BaseModel):
     interest_rate: list[InterestRatePrediction]
     exchange_rate: list[ExchangeRatePrediction]
+    gdp_impact: list[GdpImpactPoint]
+    inflation_prediction: list[InflationPredictionPoint]
     model: str = "IS-LM"
     # 予測エンジン: "is_lm" | "var" | "ar1"
     engine: str = "is_lm"

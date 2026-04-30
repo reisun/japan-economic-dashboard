@@ -34,7 +34,9 @@ from app.models.schemas import (
     Assumptions,
     CurrentGap,
     ExchangeRatePrediction,
+    GdpImpactPoint,
     ImpactPrediction,
+    InflationPredictionPoint,
     InterestRatePrediction,
     IrfPoint,
     PredictionResponse,
@@ -467,6 +469,40 @@ async def get_var_prediction(
         for i in range(PREDICTION_STEPS)
     ]
 
+    # GDP impact: difference between shocked and baseline GDP gap forecasts
+    gdp_impact_predictions = [
+        GdpImpactPoint(
+            date=quarters[-1],
+            predicted_gdp_change_percent=0.0,
+            type="actual",
+        )
+    ] + [
+        GdpImpactPoint(
+            date=future_q[i],
+            predicted_gdp_change_percent=round(
+                float(fc_with_shock[i, 0] - fc[i, 0]), 4
+            ),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+
+    # Inflation prediction: extract CPI core-core from shocked forecast
+    inflation_predictions = [
+        InflationPredictionPoint(
+            date=quarters[-1],
+            predicted_inflation_percent=round(float(last_obs[3]), 2),
+            type="actual",
+        )
+    ] + [
+        InflationPredictionPoint(
+            date=future_q[i],
+            predicted_inflation_percent=round(float(fc_with_shock[i, 3]), 2),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+
     # IRF（+1兆円の財政拡張ショック → 各変数）
     unit_shock = np.zeros(k)
     unit_shock[0] = 1.0 / nominal_gdp * 100.0  # +1兆円相当のGDPギャップショック
@@ -497,6 +533,8 @@ async def get_var_prediction(
         impact_prediction=ImpactPrediction(
             interest_rate=rate_predictions,
             exchange_rate=fx_predictions,
+            gdp_impact=gdp_impact_predictions,
+            inflation_prediction=inflation_predictions,
             model=f"VAR({p})",
             engine="var",
             assumptions=Assumptions(
@@ -588,6 +626,13 @@ async def get_ar1_prediction(
     last_shocked[0] = last_obs[0] + shock_gap_pct
 
     # 各変数を AR(1) で個別推定・予測
+    # Baseline (no shock) forecast for GDP gap comparison
+    fc_baseline = np.zeros((PREDICTION_STEPS, k))
+    for j in range(k):
+        c, phi = _fit_ar1(Y[:, j])
+        fc_baseline[:, j] = _forecast_ar1(float(last_obs[j]), c, phi, PREDICTION_STEPS)
+
+    # Shocked forecast
     fc = np.zeros((PREDICTION_STEPS, k))
     for j in range(k):
         c, phi = _fit_ar1(Y[:, j])
@@ -623,6 +668,40 @@ async def get_ar1_prediction(
         for i in range(PREDICTION_STEPS)
     ]
 
+    # GDP impact: difference between shocked and baseline GDP gap forecasts
+    gdp_impact_predictions = [
+        GdpImpactPoint(
+            date=quarters[-1],
+            predicted_gdp_change_percent=0.0,
+            type="actual",
+        )
+    ] + [
+        GdpImpactPoint(
+            date=future_q[i],
+            predicted_gdp_change_percent=round(
+                float(fc[i, 0] - fc_baseline[i, 0]), 4
+            ),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+
+    # Inflation prediction: CPI core-core from shocked forecast
+    inflation_predictions = [
+        InflationPredictionPoint(
+            date=quarters[-1],
+            predicted_inflation_percent=round(float(last_obs[3]), 2),
+            type="actual",
+        )
+    ] + [
+        InflationPredictionPoint(
+            date=future_q[i],
+            predicted_inflation_percent=round(float(fc[i, 3]), 2),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+
     return PredictionResponse(
         current_gap=CurrentGap(
             gdp_gap_percent=round(gap_pct, 2),
@@ -638,6 +717,8 @@ async def get_ar1_prediction(
         impact_prediction=ImpactPrediction(
             interest_rate=rate_predictions,
             exchange_rate=fx_predictions,
+            gdp_impact=gdp_impact_predictions,
+            inflation_prediction=inflation_predictions,
             model="AR(1)",
             engine="ar1",
             assumptions=Assumptions(
