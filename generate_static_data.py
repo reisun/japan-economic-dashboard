@@ -644,6 +644,7 @@ def generate_prediction(method="maximum"):
                 if required_spending >= 0
                 else "インフレギャップ抑制に必要な財政引き締め"
             ),
+            "gap_fill_percent": 100.0,
         },
         "impact_prediction": {
             "interest_rate": interest_predictions,
@@ -658,6 +659,7 @@ def generate_prediction(method="maximum"):
                 "fiscal_multiplier": FISCAL_MULTIPLIER,
                 "phillips_curve_slope": PHILLIPS_CURVE_SLOPE,
                 "baseline_inflation": baseline_inflation,
+                "multiplier_decay_rate": None,
             },
         },
     }
@@ -914,13 +916,7 @@ def _build_future_quarters(last_q, n):
     return out
 
 
-def _build_spending_note(amount, mode):
-    if mode == "user":
-        if amount > 0:
-            return f"ユーザー指定シナリオ: 拡張的財政支出 {amount:+.1f}兆円"
-        if amount < 0:
-            return f"ユーザー指定シナリオ: 財政引き締め {amount:+.1f}兆円"
-        return "ユーザー指定シナリオ: 財政中立"
+def _build_spending_note(amount):
     return (
         "デフレギャップ解消に必要な財政支出"
         if amount >= 0
@@ -1003,9 +999,8 @@ def generate_prediction_var(method="maximum"):
         "required_fiscal_spending": {
             "amount_trillion_yen": round(required_spending, 1),
             "multiplier": FISCAL_MULTIPLIER,
-            "note": _build_spending_note(required_spending, "auto"),
-            "scenario_mode": "auto",
-            "auto_amount_trillion_yen": round(required_spending, 1),
+            "note": _build_spending_note(required_spending),
+            "gap_fill_percent": 100.0,
         },
         "impact_prediction": {
             "interest_rate": interest_predictions,
@@ -1020,6 +1015,7 @@ def generate_prediction_var(method="maximum"):
                 "n_steps": VAR_PREDICTION_STEPS,
                 "variables": VARIABLE_NAMES_STATIC,
                 "fiscal_multiplier": FISCAL_MULTIPLIER,
+                "multiplier_decay_rate": None,
             },
             "irf": irf_points,
         },
@@ -1092,9 +1088,8 @@ def generate_prediction_ar1(method="maximum"):
         "required_fiscal_spending": {
             "amount_trillion_yen": round(required_spending, 1),
             "multiplier": FISCAL_MULTIPLIER,
-            "note": _build_spending_note(required_spending, "auto"),
-            "scenario_mode": "auto",
-            "auto_amount_trillion_yen": round(required_spending, 1),
+            "note": _build_spending_note(required_spending),
+            "gap_fill_percent": 100.0,
         },
         "impact_prediction": {
             "interest_rate": interest_predictions,
@@ -1109,6 +1104,7 @@ def generate_prediction_ar1(method="maximum"):
                 "n_steps": VAR_PREDICTION_STEPS,
                 "variables": VARIABLE_NAMES_STATIC,
                 "fiscal_multiplier": FISCAL_MULTIPLIER,
+                "multiplier_decay_rate": None,
             },
         },
     }

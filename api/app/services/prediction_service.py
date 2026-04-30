@@ -152,9 +152,11 @@ def _get_latest_rates() -> tuple[float, float]:
         return (BASELINE_JGB_10Y, BASELINE_USDJPY)
 
 
-# シナリオ入力の範囲（兆円）
-FISCAL_SPENDING_MIN = -200.0
-FISCAL_SPENDING_MAX = 200.0
+# Multiplier decay rate per quarter (half-life ~ 4 quarters)
+MULTIPLIER_DECAY_RATE = 0.85
+
+# Default gap fill percentage
+DEFAULT_GAP_FILL_PERCENT = 100.0
 
 
 def _build_prediction_quarters() -> list[str]:
@@ -174,66 +176,69 @@ def _build_prediction_quarters() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# IS-LM calculation
+# IS-LM calculation (quarterly spending with multiplier decay)
 # ---------------------------------------------------------------------------
 
 
 def _compute_is_lm_impact(
-    fiscal_spending_trillion: float,
+    quarterly_spending: float,
     n_quarters: int,
     nominal_gdp: float,
     baseline_jgb: float = BASELINE_JGB_10Y,
     baseline_fx: float = BASELINE_USDJPY,
     uip_sensitivity: float = UIP_SENSITIVITY,
-) -> tuple[list[float], list[float], bool]:
-    """Compute predicted interest rates and exchange rates per quarter.
+) -> tuple[list[float], list[float], list[float], bool]:
+    """Compute predicted rates and GDP impacts per quarter with decay.
 
-    Returns (jgb_10y_list, usdjpy_list, zlb_binding) for each quarter.
-    The ZLB constraint clamps the nominal rate at ZLB_RATE and adjusts
-    the effective dr for UIP accordingly (liquidity trap behavior).
+    Spending is injected each quarter starting at Q1. Each injection's GDP
+    impact decays at MULTIPLIER_DECAY_RATE per quarter, creating a realistic
+    hump-shaped response.
+
+    Returns (jgb_10y_list, usdjpy_list, gdp_impacts_pct, zlb_binding).
+    Q0 is "actual" (zero impact), Q1..Q(n-1) are predictions.
     """
-    n = n_quarters
-
-    # Total interest rate impact from fiscal expansion (percentage points)
-    total_dr = (
-        fiscal_spending_trillion
-        * FISCAL_MULTIPLIER
-        * MONEY_DEMAND_ELASTICITY
-        / (INVESTMENT_SENSITIVITY + MONEY_DEMAND_ELASTICITY)
-        / nominal_gdp
-        * 100
-    )
-
-    # Phase in: 0% at Q1 (actual), then ramp to 100% by Q5, hold steady after
-    ramp_quarters = 4
-    phase_in = [0.0] + [
-        min(1.0, i / ramp_quarters) for i in range(1, n)
-    ]
+    # Compute cumulative GDP impact path with decay
+    cumulative_impacts: list[float] = [0.0]  # Q0: actual baseline
+    for t in range(1, n_quarters):
+        # Sum of decayed impacts from all spending injections up to quarter t
+        impact = sum(
+            quarterly_spending * FISCAL_MULTIPLIER
+            * (MULTIPLIER_DECAY_RATE ** (t - 1 - s))
+            / nominal_gdp * 100
+            for s in range(t)  # spending injected at quarters 1..t
+        )
+        cumulative_impacts.append(impact)
 
     jgb_rates: list[float] = []
     usdjpy_rates: list[float] = []
     zlb_binding = False
 
-    for frac in phase_in:
-        dr = total_dr * frac
+    for gdp_pct in cumulative_impacts:
+        # LM curve: interest rate change from GDP impact
+        dr = (
+            gdp_pct / 100 * nominal_gdp  # back to trillion yen impact
+            * MONEY_DEMAND_ELASTICITY
+            / (INVESTMENT_SENSITIVITY + MONEY_DEMAND_ELASTICITY)
+            / nominal_gdp
+            * 100
+        )
         r = baseline_jgb + dr
 
         # Zero Lower Bound constraint
         if r < ZLB_RATE:
             r = ZLB_RATE
             zlb_binding = True
-            # Effective dr for UIP is based on clamped rate
             effective_dr = ZLB_RATE - baseline_jgb
         else:
             effective_dr = dr
 
         r = round(r, 2)
-        # UIP: higher domestic rate → yen appreciation (lower USD/JPY)
+        # UIP: higher domestic rate -> yen appreciation (lower USD/JPY)
         fx = round(baseline_fx - effective_dr * uip_sensitivity, 1)
         jgb_rates.append(r)
         usdjpy_rates.append(fx)
 
-    return jgb_rates, usdjpy_rates, zlb_binding
+    return jgb_rates, usdjpy_rates, cumulative_impacts, zlb_binding
 
 
 # ---------------------------------------------------------------------------
@@ -244,46 +249,45 @@ def _compute_is_lm_impact(
 VALID_METHODS = ("cabinet_office", "average", "maximum", "civilian")
 
 
-def _build_spending_note(amount: float, scenario_mode: str) -> str:
+def _build_spending_note(amount: float, gap_fill_percent: float) -> str:
     """サマリー表示用の文言を生成する。"""
-    if scenario_mode == "user":
-        if amount > 0:
-            return f"ユーザー指定シナリオ: 拡張的財政支出 {amount:+.1f}兆円"
-        if amount < 0:
-            return f"ユーザー指定シナリオ: 財政引き締め {amount:+.1f}兆円"
-        return "ユーザー指定シナリオ: 財政中立（インパクトなし）"
-    # auto
-    if amount >= 0:
-        return "デフレギャップ解消に必要な財政支出"
-    return "インフレギャップ抑制に必要な財政引き締め"
+    if amount > 0:
+        return f"GDPギャップの{gap_fill_percent:.0f}%充足: 拡張的財政支出 {amount:+.1f}兆円/年"
+    if amount < 0:
+        return f"GDPギャップの{gap_fill_percent:.0f}%充足: 財政引き締め {amount:+.1f}兆円/年"
+    return "財政中立（インパクトなし）"
 
 
 async def get_prediction(
     method: str = "maximum",
-    fiscal_spending_trillion: float | None = None,
+    gap_fill_percent: float | None = None,
     engine: str = "is_lm",
     uip_sensitivity: float | None = None,
 ) -> PredictionResponse:
     """予測モデル切替対応のディスパッチャ。
 
     engine = "is_lm" (デフォルト, 構造モデル) / "var" / "ar1" を選択可能。
+    gap_fill_percent: GDPギャップの何%を埋める財政政策か (0-150%, デフォルト100%)
     """
     if engine == "var":
         from app.services.var_service import get_var_prediction
 
         return await get_var_prediction(
-            method=method, fiscal_spending_trillion=fiscal_spending_trillion
+            method=method, gap_fill_percent=gap_fill_percent
         )
     if engine == "ar1":
         from app.services.var_service import get_ar1_prediction
 
         return await get_ar1_prediction(
-            method=method, fiscal_spending_trillion=fiscal_spending_trillion
+            method=method, gap_fill_percent=gap_fill_percent
         )
 
     # IS-LM (デフォルト)
     if method not in VALID_METHODS:
         method = "maximum"
+
+    # Resolve gap fill percent
+    effective_gap_fill = gap_fill_percent if gap_fill_percent is not None else DEFAULT_GAP_FILL_PERCENT
 
     # Fetch dynamic nominal GDP
     nominal_gdp = _get_nominal_gdp()
@@ -309,27 +313,18 @@ async def get_prediction(
         gap_pct = -2.5
         gap_trillion = -14.0
 
-    # Required fiscal spending to close the gap.
-    # 需給ギャップ < 0 (デフレ): 拡張的財政支出が必要 → 正の値
-    # 需給ギャップ > 0 (過熱): 引き締め的財政運営が必要 → 負の値
-    # 符号付きで返し、IS-LM の金利・為替インパクトもこの符号に応じて方向付けする。
-    auto_required_spending = -gap_trillion / FISCAL_MULTIPLIER
-
-    # ユーザー指定があればそちらを優先（任意のシナリオ入力）
-    if fiscal_spending_trillion is not None:
-        required_spending = float(fiscal_spending_trillion)
-        scenario_mode = "user"
-    else:
-        required_spending = auto_required_spending
-        scenario_mode = "auto"
+    # Compute annual spending from gap fill percentage
+    # gap_trillion < 0 (deflation gap) -> annual_spending > 0 (expansionary)
+    annual_spending = -gap_trillion / FISCAL_MULTIPLIER * effective_gap_fill / 100
+    quarterly_spending = annual_spending / 4
 
     # Resolve effective UIP sensitivity
     effective_uip = uip_sensitivity if uip_sensitivity is not None else UIP_SENSITIVITY
 
-    # IS-LM impact
+    # IS-LM impact with quarterly spending and decay
     quarters = _build_prediction_quarters()
-    jgb_rates, usdjpy_rates, zlb_binding = _compute_is_lm_impact(
-        required_spending,
+    jgb_rates, usdjpy_rates, gdp_impacts_pct, zlb_binding = _compute_is_lm_impact(
+        quarterly_spending,
         len(quarters),
         nominal_gdp,
         baseline_jgb=baseline_jgb,
@@ -356,36 +351,28 @@ async def get_prediction(
         for i, (q, fx) in enumerate(zip(quarters, usdjpy_rates))
     ]
 
-    # GDP impact path: fiscal spending effect on GDP (% change from baseline)
-    # dY = fiscal_spending * FISCAL_MULTIPLIER, as % of nominal GDP
-    total_gdp_change_pct = required_spending * FISCAL_MULTIPLIER / nominal_gdp * 100
-
-    # Phase-in follows the same schedule as interest rates
-    n = len(quarters)
-    ramp_quarters = 4
-    phase_in = [0.0] + [min(1.0, i / ramp_quarters) for i in range(1, n)]
-
+    # GDP impact predictions from the decay model
     gdp_impact_predictions = [
         GdpImpactPoint(
             date=q,
-            predicted_gdp_change_percent=round(total_gdp_change_pct * frac, 4),
+            predicted_gdp_change_percent=round(impact, 4),
             type="actual" if i == 0 else "prediction",
         )
-        for i, (q, frac) in enumerate(zip(quarters, phase_in))
+        for i, (q, impact) in enumerate(zip(quarters, gdp_impacts_pct))
     ]
 
-    # Phillips curve inflation prediction
+    # Phillips curve inflation prediction using actual GDP impact path
     baseline_inflation = _get_baseline_inflation()
     inflation_predictions = [
         InflationPredictionPoint(
             date=q,
             predicted_inflation_percent=round(
-                baseline_inflation + PHILLIPS_CURVE_SLOPE * (gap_pct + total_gdp_change_pct * frac),
+                baseline_inflation + PHILLIPS_CURVE_SLOPE * (gap_pct + impact),
                 2,
             ),
             type="actual" if i == 0 else "prediction",
         )
-        for i, (q, frac) in enumerate(zip(quarters, phase_in))
+        for i, (q, impact) in enumerate(zip(quarters, gdp_impacts_pct))
     ]
 
     return PredictionResponse(
@@ -394,13 +381,10 @@ async def get_prediction(
             gdp_gap_trillion_yen=gap_trillion,
         ),
         required_fiscal_spending=RequiredFiscalSpending(
-            amount_trillion_yen=round(required_spending, 1),
+            amount_trillion_yen=round(annual_spending, 1),
             multiplier=FISCAL_MULTIPLIER,
-            note=(
-                _build_spending_note(required_spending, scenario_mode)
-            ),
-            scenario_mode=scenario_mode,
-            auto_amount_trillion_yen=round(auto_required_spending, 1),
+            note=_build_spending_note(annual_spending, effective_gap_fill),
+            gap_fill_percent=effective_gap_fill,
         ),
         impact_prediction=ImpactPrediction(
             interest_rate=interest_predictions,
@@ -418,6 +402,7 @@ async def get_prediction(
                 baseline_jgb_10y=baseline_jgb,
                 baseline_usdjpy=baseline_fx,
                 zlb_binding=zlb_binding,
+                multiplier_decay_rate=MULTIPLIER_DECAY_RATE,
                 phillips_curve_slope=PHILLIPS_CURVE_SLOPE,
                 baseline_inflation=baseline_inflation,
             ),
