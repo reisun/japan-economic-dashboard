@@ -376,29 +376,31 @@ def _build_future_quarters(last_q: str, n: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def _build_spending_note(amount: float, scenario_mode: str) -> str:
-    if scenario_mode == "user":
-        if amount > 0:
-            return f"ユーザー指定シナリオ: 拡張的財政支出 {amount:+.1f}兆円"
-        if amount < 0:
-            return f"ユーザー指定シナリオ: 財政引き締め {amount:+.1f}兆円"
-        return "ユーザー指定シナリオ: 財政中立"
-    if amount >= 0:
-        return "デフレギャップ解消に必要な財政支出"
-    return "インフレギャップ抑制に必要な財政引き締め"
+DEFAULT_GAP_FILL_PERCENT = 100.0
+
+
+def _build_spending_note(amount: float, gap_fill_percent: float) -> str:
+    if amount > 0:
+        return f"GDPギャップの{gap_fill_percent:.0f}%充足: 拡張的財政支出 {amount:+.1f}兆円/年"
+    if amount < 0:
+        return f"GDPギャップの{gap_fill_percent:.0f}%充足: 財政引き締め {amount:+.1f}兆円/年"
+    return "財政中立（インパクトなし）"
 
 
 async def get_var_prediction(
     method: str = "maximum",
-    fiscal_spending_trillion: float | None = None,
+    gap_fill_percent: float | None = None,
 ) -> PredictionResponse:
     """VAR(4) による統計的予測。
 
     財政支出シナリオは GDPギャップショックとして VAR に与え、その応答を
     ベースライン予測に重畳する形で簡略実装する（VARX ではなく shock-augmented VAR）。
+    gap_fill_percent: GDPギャップの何%を埋める財政政策か (0-150%)
     """
     if method not in VALID_METHODS:
         method = "maximum"
+
+    effective_gap_fill = gap_fill_percent if gap_fill_percent is not None else DEFAULT_GAP_FILL_PERCENT
 
     quarters, Y = await _build_panel(method)
     T, k = Y.shape
@@ -419,18 +421,12 @@ async def get_var_prediction(
     nominal_gdp = _get_nominal_gdp()
     gap_trillion = round(gap_pct / 100.0 * nominal_gdp, 1)
 
-    # 必要財政支出（auto）
-    auto_required_spending = -gap_trillion / FISCAL_MULTIPLIER
-    if fiscal_spending_trillion is not None:
-        required_spending = float(fiscal_spending_trillion)
-        scenario_mode = "user"
-    else:
-        required_spending = auto_required_spending
-        scenario_mode = "auto"
+    # Compute annual spending from gap fill percentage
+    annual_spending = -gap_trillion / FISCAL_MULTIPLIER * effective_gap_fill / 100
 
     # 財政ショック → GDPギャップショック（兆円 → ％ポイント）。
     # +1兆円の財政拡張 ≈ 乗数1で +(1/nominal_gdp)*100 のギャップ拡大。
-    shock_gap_pct = required_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
+    shock_gap_pct = annual_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
     shock_vec = np.zeros(k)
     shock_vec[0] = shock_gap_pct
     shock_response = _compute_irf(A, PREDICTION_STEPS - 1, shock_vec)
@@ -524,11 +520,10 @@ async def get_var_prediction(
             gdp_gap_trillion_yen=gap_trillion,
         ),
         required_fiscal_spending=RequiredFiscalSpending(
-            amount_trillion_yen=round(required_spending, 1),
+            amount_trillion_yen=round(annual_spending, 1),
             multiplier=FISCAL_MULTIPLIER,
-            note=_build_spending_note(required_spending, scenario_mode),
-            scenario_mode=scenario_mode,
-            auto_amount_trillion_yen=round(auto_required_spending, 1),
+            note=_build_spending_note(annual_spending, effective_gap_fill),
+            gap_fill_percent=effective_gap_fill,
         ),
         impact_prediction=ImpactPrediction(
             interest_rate=rate_predictions,
@@ -593,16 +588,19 @@ def _forecast_ar1(y0: float, c: float, phi: float, n_steps: int) -> list[float]:
 
 async def get_ar1_prediction(
     method: str = "maximum",
-    fiscal_spending_trillion: float | None = None,
+    gap_fill_percent: float | None = None,
 ) -> PredictionResponse:
     """AR(1) ベースライン: 各変数を独立に AR(1) で予測。
 
     ベンチマーク用途のため、財政支出シナリオは GDPギャップ初期値の調整のみで
     反映する（金利・為替への波及は AR(1) 自身の伝播ではなく、単純な GDP ギャップ
     スプリット効果として表現）。
+    gap_fill_percent: GDPギャップの何%を埋める財政政策か (0-150%)
     """
     if method not in VALID_METHODS:
         method = "maximum"
+
+    effective_gap_fill = gap_fill_percent if gap_fill_percent is not None else DEFAULT_GAP_FILL_PERCENT
 
     quarters, Y = await _build_panel(method)
     T, k = Y.shape
@@ -612,16 +610,11 @@ async def get_ar1_prediction(
     gap_pct = float(last_obs[0])
     gap_trillion = round(gap_pct / 100.0 * nominal_gdp, 1)
 
-    auto_required_spending = -gap_trillion / FISCAL_MULTIPLIER
-    if fiscal_spending_trillion is not None:
-        required_spending = float(fiscal_spending_trillion)
-        scenario_mode = "user"
-    else:
-        required_spending = auto_required_spending
-        scenario_mode = "auto"
+    # Compute annual spending from gap fill percentage
+    annual_spending = -gap_trillion / FISCAL_MULTIPLIER * effective_gap_fill / 100
 
     # ショック反映: GDPギャップを直接シフト（同時期に乗数効果が及ぶと仮定）
-    shock_gap_pct = required_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
+    shock_gap_pct = annual_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
     last_shocked = last_obs.copy()
     last_shocked[0] = last_obs[0] + shock_gap_pct
 
@@ -708,11 +701,10 @@ async def get_ar1_prediction(
             gdp_gap_trillion_yen=gap_trillion,
         ),
         required_fiscal_spending=RequiredFiscalSpending(
-            amount_trillion_yen=round(required_spending, 1),
+            amount_trillion_yen=round(annual_spending, 1),
             multiplier=FISCAL_MULTIPLIER,
-            note=_build_spending_note(required_spending, scenario_mode),
-            scenario_mode=scenario_mode,
-            auto_amount_trillion_yen=round(auto_required_spending, 1),
+            note=_build_spending_note(annual_spending, effective_gap_fill),
+            gap_fill_percent=effective_gap_fill,
         ),
         impact_prediction=ImpactPrediction(
             interest_rate=rate_predictions,

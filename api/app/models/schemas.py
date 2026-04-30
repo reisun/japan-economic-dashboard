@@ -120,11 +120,9 @@ class CurrentGap(BaseModel):
 class RequiredFiscalSpending(BaseModel):
     amount_trillion_yen: float
     multiplier: float
-    note: str = "デフレギャップ解消に必要な財政支出"
-    # シナリオモード: "auto" (GDPギャップから自動算出) | "user" (ユーザー指定)
-    scenario_mode: str = "auto"
-    # auto モードでの自動算出値（user モード時の併記用）
-    auto_amount_trillion_yen: float | None = None
+    note: str = "GDPギャップ充足率に基づく財政支出"
+    # GDPギャップの何%を埋める財政政策か (0-150%)
+    gap_fill_percent: float = 100.0
 
 
 class InterestRatePrediction(BaseModel):
@@ -151,6 +149,8 @@ class Assumptions(BaseModel):
     baseline_usdjpy: float | None = None
     # ゼロ金利制約
     zlb_binding: bool | None = None
+    # 乗数減衰率（四半期ごと）
+    multiplier_decay_rate: float | None = None
     # フィリップス曲線パラメータ
     phillips_curve_slope: float | None = None  # フィリップス曲線の傾き
     baseline_inflation: float | None = None  # ベースラインインフレ率
