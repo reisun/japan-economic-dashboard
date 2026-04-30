@@ -26,7 +26,7 @@ export function useApi<T>(path: string): ApiState<T> {
     const controller = new AbortController();
 
     async function fetchData() {
-      setState({ data: null, loading: true, error: null });
+      setState((prev) => ({ ...prev, loading: true, error: null }));
       try {
         const url = buildUrl(path);
         const response = await fetch(url, { signal: controller.signal });
@@ -41,7 +41,7 @@ export function useApi<T>(path: string): ApiState<T> {
         }
         const message =
           err instanceof Error ? err.message : "データの取得に失敗しました";
-        setState({ data: null, loading: false, error: message });
+        setState((prev) => ({ data: prev.data, loading: false, error: message }));
       }
     }
 
