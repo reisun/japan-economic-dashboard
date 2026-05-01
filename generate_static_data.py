@@ -1062,6 +1062,11 @@ def generate_prediction_var(method="maximum"):
         for h in range(VAR_PREDICTION_STEPS + 1)
     ]
 
+    # IRF から暗黙のフィリップス曲線傾きを抽出
+    cum_gdp = sum(irf[h][0] for h in range(VAR_PREDICTION_STEPS + 1))
+    cum_cpi = sum(irf[h][3] for h in range(VAR_PREDICTION_STEPS + 1))
+    implied_alpha = round(cum_cpi / cum_gdp, 4) if abs(cum_gdp) > 1e-10 else None
+
     return {
         "current_gap": {
             "gdp_gap_percent": round(gap_pct, 2),
@@ -1086,6 +1091,7 @@ def generate_prediction_var(method="maximum"):
                 "n_steps": VAR_PREDICTION_STEPS,
                 "variables": VARIABLE_NAMES_STATIC,
                 "fiscal_multiplier": FISCAL_MULTIPLIER,
+                "implied_phillips_slope": implied_alpha,
                 "multiplier_decay_rate": None,
             },
             "irf": irf_points,
@@ -1188,7 +1194,7 @@ def generate_prediction_ar1(method="maximum"):
 BVAR_DEFAULT_LAMBDA_STATIC = 0.2
 
 
-def _fit_bvar1_static(Y, lambda_=BVAR_DEFAULT_LAMBDA_STATIC):
+def _fit_bvar1_static(Y, lambda_=BVAR_DEFAULT_LAMBDA_STATIC, phillips_slope=None):
     """Bayesian VAR(1) with Minnesota prior. Pure Python 版。
 
     Returns (c (k,), A (k,k)).
@@ -1224,6 +1230,10 @@ def _fit_bvar1_static(Y, lambda_=BVAR_DEFAULT_LAMBDA_STATIC):
         # 自変数 lag-1: prior mean = 1, precision = lambda^2
         prior_mean[row][var_idx] = 1.0
         prior_prec[row] = lambda_ ** 2
+
+    # フィリップス曲線 prior: CPI方程式(eq=3) の GDP_gap(var=0) lag-1
+    if phillips_slope is not None:
+        prior_mean[1 + 0][3] = phillips_slope
 
     # Lambda 対角行列
     Lambda = [[prior_prec[i] if i == j else 0.0 for j in range(n_params)] for i in range(n_params)]
@@ -1262,7 +1272,9 @@ def generate_prediction_bvar(method="maximum"):
     if not Y:
         return generate_prediction(method)
     T = len(Y)
-    c, A = _fit_bvar1_static(Y)
+    # フィリップス曲線の傾き推定（BVAR prior に組み込む）
+    pc_slope, _pc_r2, _pc_n, _pc_se = _estimate_phillips_slope_static(method)
+    c, A = _fit_bvar1_static(Y, phillips_slope=pc_slope)
 
     last_obs = Y[-1]
     gap_pct = last_obs[0]
@@ -1319,6 +1331,11 @@ def generate_prediction_bvar(method="maximum"):
         for h in range(VAR_PREDICTION_STEPS + 1)
     ]
 
+    # IRF から暗黙のフィリップス曲線傾きを抽出
+    cum_gdp = sum(irf[h][0] for h in range(VAR_PREDICTION_STEPS + 1))
+    cum_cpi = sum(irf[h][3] for h in range(VAR_PREDICTION_STEPS + 1))
+    implied_alpha = round(cum_cpi / cum_gdp, 4) if abs(cum_gdp) > 1e-10 else None
+
     return {
         "current_gap": {
             "gdp_gap_percent": round(gap_pct, 2),
@@ -1344,6 +1361,8 @@ def generate_prediction_bvar(method="maximum"):
                 "variables": VARIABLE_NAMES_STATIC,
                 "fiscal_multiplier": FISCAL_MULTIPLIER,
                 "lambda_tightness": BVAR_DEFAULT_LAMBDA_STATIC,
+                "phillips_prior_slope": round(pc_slope, 4),
+                "implied_phillips_slope": implied_alpha,
                 "multiplier_decay_rate": None,
             },
             "irf": irf_points,
