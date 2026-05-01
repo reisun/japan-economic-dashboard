@@ -1,0 +1,215 @@
+{
+  "current_gap": {
+    "gdp_gap_percent": -2.65,
+    "gdp_gap_trillion_yen": -14.8
+  },
+  "required_fiscal_spending": {
+    "amount_trillion_yen": 14.8,
+    "multiplier": 1.0,
+    "note": "デフレギャップ解消に必要な財政支出",
+    "gap_fill_percent": 100.0
+  },
+  "impact_prediction": {
+    "interest_rate": [
+      {
+        "date": "2024-Q4",
+        "predicted_jgb_10y": 0.85,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_jgb_10y": 0.85,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_jgb_10y": 0.85,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_jgb_10y": 0.85,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_jgb_10y": 0.85,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_jgb_10y": 0.85,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_jgb_10y": 0.76,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_jgb_10y": 0.52,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_jgb_10y": 0.31,
+        "type": "prediction"
+      }
+    ],
+    "exchange_rate": [
+      {
+        "date": "2024-Q4",
+        "predicted_usdjpy": 150.0,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_usdjpy": 149.4,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_usdjpy": 149.4,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_usdjpy": 149.4,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_usdjpy": 149.4,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_usdjpy": 149.4,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_usdjpy": 149.4,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_usdjpy": 149.4,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_usdjpy": 149.4,
+        "type": "prediction"
+      }
+    ],
+    "gdp_impact": [
+      {
+        "date": "2024-Q4",
+        "predicted_gdp_change_percent": 0.0,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_gdp_change_percent": 0.6607,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_gdp_change_percent": 1.2223,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_gdp_change_percent": 1.6997,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_gdp_change_percent": 2.1054,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_gdp_change_percent": 2.4503,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_gdp_change_percent": 2.7435,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_gdp_change_percent": 2.9927,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_gdp_change_percent": 3.2045,
+        "type": "prediction"
+      }
+    ],
+    "inflation_prediction": [
+      {
+        "date": "2024-Q4",
+        "predicted_inflation_percent": 2.2,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_inflation_percent": 2.2,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_inflation_percent": 2.2,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_inflation_percent": 2.2,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_inflation_percent": 2.2,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_inflation_percent": 2.2,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_inflation_percent": 2.11,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_inflation_percent": 1.87,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_inflation_percent": 1.66,
+        "type": "prediction"
+      }
+    ],
+    "model": "MV=PY",
+    "engine": "mvpy",
+    "assumptions": {
+      "fiscal_multiplier": 1.0,
+      "nominal_gdp_trillion_yen": 560.0,
+      "baseline_jgb_10y": 0.85,
+      "baseline_usdjpy": 150.0,
+      "baseline_inflation": 2.2,
+      "multiplier_decay_rate": 0.85,
+      "money_supply_trillion": 1200.0,
+      "velocity_base": 0.4667,
+      "velocity_predicted": 0.479
+    }
+  }
+}
