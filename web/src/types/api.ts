@@ -154,6 +154,9 @@ export interface PredictionResponse {
       baseline_usdjpy?: number | null;
       zlb_binding?: boolean | null;
       phillips_curve_slope?: number | null;
+      phillips_r_squared?: number | null;
+      phillips_n_obs?: number | null;
+      phillips_std_error?: number | null;
       baseline_inflation?: number | null;
       multiplier_decay_rate?: number | null;
       lag_order?: number | null;

@@ -79,17 +79,17 @@
     "inflation_prediction": [
       {
         "date": "2025-Q1",
-        "predicted_inflation_percent": 1.34,
+        "predicted_inflation_percent": 1.43,
         "type": "actual"
       },
       {
         "date": "2025-Q2",
-        "predicted_inflation_percent": 1.62,
+        "predicted_inflation_percent": 1.68,
         "type": "prediction"
       },
       {
         "date": "2025-Q3",
-        "predicted_inflation_percent": 1.92,
+        "predicted_inflation_percent": 1.95,
         "type": "prediction"
       },
       {
@@ -104,7 +104,10 @@
       "money_demand_elasticity": 0.5,
       "investment_sensitivity": 0.3,
       "fiscal_multiplier": 1.0,
-      "phillips_curve_slope": 0.3,
+      "phillips_curve_slope": 0.2687,
+      "phillips_r_squared": 0.1115,
+      "phillips_n_obs": 12,
+      "phillips_std_error": 0.2399,
       "baseline_inflation": 2.2,
       "multiplier_decay_rate": null
     }
