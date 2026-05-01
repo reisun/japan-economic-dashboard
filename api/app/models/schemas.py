@@ -164,6 +164,8 @@ class Assumptions(BaseModel):
     variables: list[str] | None = None
     # BVAR 用パラメータ
     lambda_tightness: float | None = None
+    phillips_prior_slope: float | None = None  # BVAR の CPI 方程式に使った prior α
+    implied_phillips_slope: float | None = None  # IRF から逆算した暗黙の α
 
 
 class GdpImpactPoint(BaseModel):

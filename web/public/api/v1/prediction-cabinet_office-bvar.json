@@ -122,17 +122,17 @@
       },
       {
         "date": "2025-Q3",
-        "predicted_gdp_change_percent": 0.0288,
+        "predicted_gdp_change_percent": 0.0289,
         "type": "prediction"
       },
       {
         "date": "2025-Q4",
-        "predicted_gdp_change_percent": -0.0005,
+        "predicted_gdp_change_percent": -0.0004,
         "type": "prediction"
       },
       {
         "date": "2026-Q1",
-        "predicted_gdp_change_percent": -0.0008,
+        "predicted_gdp_change_percent": -0.0007,
         "type": "prediction"
       },
       {
@@ -212,6 +212,8 @@
       ],
       "fiscal_multiplier": 1.0,
       "lambda_tightness": 0.2,
+      "phillips_prior_slope": 0.4587,
+      "implied_phillips_slope": -0.0204,
       "multiplier_decay_rate": null
     },
     "irf": [
@@ -227,14 +229,14 @@
         "gdp_gap": 0.0291,
         "jgb_10y": -0.0042,
         "usdjpy": -0.07,
-        "cpi_core_core": -0.0033
+        "cpi_core_core": -0.003
       },
       {
         "horizon": 2,
         "gdp_gap": 0.0026,
         "jgb_10y": -0.0008,
         "usdjpy": -0.014,
-        "cpi_core_core": -0.0011
+        "cpi_core_core": -0.001
       },
       {
         "horizon": 3,

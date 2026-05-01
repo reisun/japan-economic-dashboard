@@ -673,6 +673,12 @@ export function PredictionChart() {
           {data.impact_prediction.assumptions.lambda_tightness != null && (
             <div>Minnesota prior tightness (lambda): {data.impact_prediction.assumptions.lambda_tightness}</div>
           )}
+          {data.impact_prediction.assumptions.phillips_prior_slope != null && (
+            <div>BVAR prior フィリップス曲線傾き: {data.impact_prediction.assumptions.phillips_prior_slope}</div>
+          )}
+          {data.impact_prediction.assumptions.implied_phillips_slope != null && (
+            <div>IRF暗黙のフィリップス曲線傾き: {data.impact_prediction.assumptions.implied_phillips_slope}</div>
+          )}
           {data.current_gap.gdp_gap_trillion_yen != null && (
             <div>名目GDPギャップ: {data.current_gap.gdp_gap_trillion_yen}兆円</div>
           )}

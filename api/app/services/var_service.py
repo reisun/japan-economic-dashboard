@@ -44,7 +44,7 @@ from app.models.schemas import (
 )
 from app.services.gdp_gap_service import get_gdp_gap
 from app.services.inflation_service import get_inflation
-from app.services.prediction_service import _get_nominal_gdp
+from app.services.prediction_service import _estimate_phillips_slope, _get_nominal_gdp
 from app.services.rates_service import get_rates
 
 logger = logging.getLogger(__name__)
@@ -520,6 +520,11 @@ async def get_var_prediction(
         for h in range(PREDICTION_STEPS + 1)
     ]
 
+    # IRF から暗黙のフィリップス曲線傾きを抽出
+    cum_gdp = float(np.sum(irf_arr[:, 0]))
+    cum_cpi = float(np.sum(irf_arr[:, 3]))
+    implied_alpha = round(cum_cpi / cum_gdp, 4) if abs(cum_gdp) > 1e-10 else None
+
     return PredictionResponse(
         current_gap=CurrentGap(
             gdp_gap_percent=round(gap_pct, 2),
@@ -544,6 +549,7 @@ async def get_var_prediction(
                 n_steps=PREDICTION_STEPS,
                 variables=VARIABLE_NAMES,
                 fiscal_multiplier=FISCAL_MULTIPLIER,
+                implied_phillips_slope=implied_alpha,
             ),
             irf=irf_points,
         ),
@@ -558,7 +564,8 @@ BVAR_DEFAULT_LAMBDA = 0.2
 
 
 def _fit_bvar(
-    Y: np.ndarray, p: int, lambda_: float = BVAR_DEFAULT_LAMBDA
+    Y: np.ndarray, p: int, lambda_: float = BVAR_DEFAULT_LAMBDA,
+    phillips_slope: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Bayesian VAR(p) with Minnesota prior.
 
@@ -632,6 +639,11 @@ def _fit_bvar(
                     # (lambda / lag_num * sigma_eq / sigma_var)^2
                     prec = (lambda_ / lag_num * sigma[eq_idx] / sigma[var_idx]) ** 2
 
+                # フィリップス曲線 prior: CPI方程式(eq=3) の GDP_gap(var=0) lag-1
+                if (phillips_slope is not None
+                        and lag_num == 1 and var_idx == 0 and eq_idx == 3):
+                    prior_mean[row, eq_idx] = phillips_slope
+
             # precision は全方程式で共通の対角要素（最も保守的な値を使用）
             # 簡略化: 自変数基準の precision を使用
             prior_precision[row] = (lambda_ / (lag_idx + 1)) ** 2
@@ -683,10 +695,15 @@ async def get_bvar_prediction(
     quarters, Y = await _build_panel(method)
     T, k = Y.shape
 
+    # フィリップス曲線の傾き推定（BVAR prior に組み込む）
+    gdp_gap_data = await get_gdp_gap()
+    pc_result = _estimate_phillips_slope(method, gdp_gap_data)
+    pc_slope = pc_result[0]  # (slope, r_squared, n_obs, std_error)
+
     # ラグ次数の決定（OLS-VAR と同じロジック）
     max_p_by_dof = max(1, (T - 8) // (k * 2))
     p = max(1, min(VAR_LAG_ORDER, max_p_by_dof))
-    c, A = _fit_bvar(Y, p, lambda_=BVAR_DEFAULT_LAMBDA)
+    c, A = _fit_bvar(Y, p, lambda_=BVAR_DEFAULT_LAMBDA, phillips_slope=pc_slope)
 
     # ベースライン予測
     fc = _forecast_var(Y, c, A, PREDICTION_STEPS)
@@ -790,6 +807,11 @@ async def get_bvar_prediction(
         for h in range(PREDICTION_STEPS + 1)
     ]
 
+    # IRF から暗黙のフィリップス曲線傾きを抽出
+    cum_gdp = float(np.sum(irf_arr[:, 0]))
+    cum_cpi = float(np.sum(irf_arr[:, 3]))
+    implied_alpha = round(cum_cpi / cum_gdp, 4) if abs(cum_gdp) > 1e-10 else None
+
     return PredictionResponse(
         current_gap=CurrentGap(
             gdp_gap_percent=round(gap_pct, 2),
@@ -815,6 +837,8 @@ async def get_bvar_prediction(
                 variables=VARIABLE_NAMES,
                 fiscal_multiplier=FISCAL_MULTIPLIER,
                 lambda_tightness=BVAR_DEFAULT_LAMBDA,
+                phillips_prior_slope=round(pc_slope, 4),
+                implied_phillips_slope=implied_alpha,
             ),
             irf=irf_points,
         ),
