@@ -159,6 +159,8 @@ class Assumptions(BaseModel):
     n_obs: int | None = None
     n_steps: int | None = None
     variables: list[str] | None = None
+    # BVAR 用パラメータ
+    lambda_tightness: float | None = None
 
 
 class GdpImpactPoint(BaseModel):
