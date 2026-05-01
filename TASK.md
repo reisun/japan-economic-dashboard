@@ -25,6 +25,7 @@
 - [x] Bayesian VAR (Minnesota prior) と Random Walk with Drift の追加（engine=bvar: Minnesota prior による正則化VAR、lambda tightness=0.2、IRF付き; engine=rw: phi=1固定+ドリフト推定の最小ベンチマーク; フロント5エンジン切替対応、静的JSON対応）
 - [x] Recharts chunk分割（vite `manualChunks` で recharts を独立 chunk 化、initial JS を 567kB→30kB に削減、ビルドサイズ警告解消; `chunkSizeWarningLimit: 700` で recharts 自体の警告を抑制）
 - [x] reverse-proxy への統合（reverse-proxy 統合は完了済（`~/workspace/reverse-proxy/nginx/nginx.conf` に `/japan-economic-dashboard/api/` ルーティング、`japan-economic-dashboard-net` 経由で upstream `japan-economic-dashboard-api:8000` に到達）。外部 URL `https://reisun.asuscomm.com/japan-economic-dashboard/api/v1/*` で health / gdp-gap / inflation / prediction が HTTP 200 応答を実機確認。CORS は FastAPI 側で `https://reisun.github.io` を許可済。本番デプロイ構成と nginx 抜粋を README.md に追記。）
+- [x] MV=PY（貨幣数量説）と NKPC（ニューケインジアン・フィリップス曲線）エンジンの追加（engine=mvpy: M x V = P x Y に基づく構造モデル、FREDからM2取得、流通速度Vをギャップ充足度に比例して調整、Fisher方程式で金利、PPPで為替; engine=nkpc: pi_t = beta * E[pi_{t+1}] + kappa * gap_t、適応的+前方視的ハイブリッド期待、テイラールールで金利、UIPで為替; フロント7エンジン切替対応、静的JSON対応）
 
 ## Backlog（優先順）
 
