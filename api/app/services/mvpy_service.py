@@ -77,7 +77,7 @@ def _get_money_supply() -> float:
     Divide by 1e12 to convert to trillions.
     Falls back to static constant if fetch fails.
     """
-    series = fetch_fred_series("MABMM301JPM189S", years=2)
+    series = fetch_fred_series("MABMM301JPM189S", years=5)
     if series is not None and len(series) > 0:
         latest_yen = float(series.iloc[-1])
         latest_trillion = round(latest_yen / 1e12, 1)
