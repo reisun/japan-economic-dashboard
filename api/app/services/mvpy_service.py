@@ -3,7 +3,7 @@
 Model overview:
   M x V = P x Y  (Fisher equation of exchange)
 
-  M: Money supply (M2) -- fetched from FRED or fallback
+  M: Money supply (M3) -- fetched from FRED or fallback
   V: Velocity of money -- derived from nominal GDP / M, adjusted by gap fill
   P: Price level (GDP deflator or CPI proxy)
   Y: Real GDP
@@ -61,37 +61,38 @@ logger = logging.getLogger(__name__)
 # MV=PY Model Parameters
 # ---------------------------------------------------------------------------
 
-# M2 fallback (trillion yen, approximate 2024 level)
-_M2_FALLBACK_TRILLION = 1200.0
+# M3 fallback (trillion yen, approximate 2023 level from FRED MABMM301JPM189S)
+_M3_FALLBACK_TRILLION = 1597.0
 
 # US baseline inflation (for PPP exchange rate calculation)
 _US_INFLATION_PCT = 2.5
 
 
-@cached("japan_m2_trillion")
+@cached("japan_m3_trillion")
 def _get_money_supply() -> float:
-    """Fetch Japan M2 money supply (trillion yen) from FRED.
+    """Fetch Japan M3 money supply (trillion yen) from FRED.
 
-    FRED series MABMM201JPM189S: M2 for Japan, monthly, national currency.
-    Unit: national currency (yen). Divide by 1e12 to convert to trillions.
+    FRED series MABMM301JPM189S: M3 for Japan, monthly, national currency (yen).
+    M3 is broader than M2 and more appropriate for Japan's financial system.
+    Divide by 1e12 to convert to trillions.
     Falls back to static constant if fetch fails.
     """
-    series = fetch_fred_series("MABMM201JPM189S", years=2)
+    series = fetch_fred_series("MABMM301JPM189S", years=2)
     if series is not None and len(series) > 0:
         latest_yen = float(series.iloc[-1])
         latest_trillion = round(latest_yen / 1e12, 1)
         if latest_trillion > 0:
             logger.info(
-                "Japan M2 from FRED: %.1f trillion yen (latest: %s)",
+                "Japan M3 from FRED: %.1f trillion yen (latest: %s)",
                 latest_trillion,
                 series.index[-1].date(),
             )
             return latest_trillion
     logger.info(
-        "Japan M2: FRED fetch failed, using fallback %.1f trillion yen",
-        _M2_FALLBACK_TRILLION,
+        "Japan M3: FRED fetch failed, using fallback %.1f trillion yen",
+        _M3_FALLBACK_TRILLION,
     )
-    return _M2_FALLBACK_TRILLION
+    return _M3_FALLBACK_TRILLION
 
 
 # ---------------------------------------------------------------------------
