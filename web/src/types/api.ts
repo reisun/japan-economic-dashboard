@@ -103,8 +103,8 @@ export interface PredictionExchangePoint {
   type: "actual" | "prediction";
 }
 
-/** 予測エンジン: is_lm (構造) | var (VAR) | bvar (Bayesian VAR) | ar1 (AR(1)) | rw (Random Walk) */
-export type PredictionEngine = "is_lm" | "var" | "ar1" | "bvar" | "rw";
+/** 予測エンジン: is_lm (構造) | var (VAR) | bvar (Bayesian VAR) | ar1 (AR(1)) | rw (Random Walk) | mvpy (MV=PY) | nkpc (NKPC) */
+export type PredictionEngine = "is_lm" | "var" | "ar1" | "bvar" | "rw" | "mvpy" | "nkpc";
 
 export interface GdpImpactPoint {
   date: string;
@@ -166,6 +166,15 @@ export interface PredictionResponse {
       lambda_tightness?: number | null;
       phillips_prior_slope?: number | null;
       implied_phillips_slope?: number | null;
+      // MV=PY parameters
+      money_supply_trillion?: number | null;
+      velocity_base?: number | null;
+      velocity_predicted?: number | null;
+      // NKPC parameters
+      discount_factor?: number | null;
+      kappa?: number | null;
+      forward_weight?: number | null;
+      inflation_target?: number | null;
     };
     irf?: IrfPoint[] | null;
   };

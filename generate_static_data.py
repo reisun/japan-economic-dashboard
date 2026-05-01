@@ -1513,6 +1513,289 @@ def generate_inflation():
 
 
 # ---------------------------------------------------------------------------
+# MV=PY (Quantity Theory of Money) — pure-Python 版
+# ---------------------------------------------------------------------------
+
+MVPY_M2_FALLBACK_TRILLION = 1200.0
+MVPY_US_INFLATION_PCT = 2.5
+MVPY_MULTIPLIER_DECAY_RATE = 0.85
+
+
+def generate_prediction_mvpy(method="maximum"):
+    """MV=PY エンジンの静的JSON生成。"""
+    # Get GDP gap based on method
+    gdp_gap_data = generate_gdp_gap()
+    if method == "cabinet_office":
+        gap_pct = gdp_gap_data["cabinet_office"]["data"][-1]["gdp_gap_percent"]
+    elif method == "average":
+        gap_pct = gdp_gap_data["estimated_average"]["data"][-1]["gdp_gap_percent"]
+    elif method == "civilian":
+        gap_pct = gdp_gap_data["estimated_civilian"]["data"][-1]["gdp_gap_percent"]
+    else:
+        gap_pct = gdp_gap_data["estimated_maximum"]["data"][-1]["gdp_gap_percent"]
+    gap_trillion = round(gap_pct / 100.0 * NOMINAL_GDP, 1)
+
+    required_spending = -gap_trillion / FISCAL_MULTIPLIER
+
+    # MV=PY parameters
+    money_supply = MVPY_M2_FALLBACK_TRILLION
+    v_base = NOMINAL_GDP / money_supply
+    v_change_rate = 1.0 * abs(gap_pct) / 100.0  # 100% gap fill
+
+    # Real interest rate
+    baseline_inflation = MOCK_INFLATION[-1]["cpi_core_core"] if MOCK_INFLATION else BASELINE_INFLATION_FALLBACK
+    r_real = BASELINE_JGB_10Y - baseline_inflation
+
+    quarterly_spending = required_spending / 4
+
+    # Build predictions using same quarter structure as VAR
+    quarters_panel, _ = _build_panel_static(method)
+    if not quarters_panel:
+        quarters_panel = QUARTERS[-4:]
+    future_q = _build_future_quarters(quarters_panel[-1], VAR_PREDICTION_STEPS)
+
+    interest_predictions = [
+        {"date": quarters_panel[-1], "predicted_jgb_10y": round(BASELINE_JGB_10Y, 2), "type": "actual"}
+    ]
+    exchange_predictions = [
+        {"date": quarters_panel[-1], "predicted_usdjpy": round(BASELINE_USDJPY, 1), "type": "actual"}
+    ]
+    gdp_impact_predictions = [
+        {"date": quarters_panel[-1], "predicted_gdp_change_percent": 0.0, "type": "actual"}
+    ]
+    inflation_predictions = [
+        {"date": quarters_panel[-1], "predicted_inflation_percent": round(baseline_inflation, 2), "type": "actual"}
+    ]
+
+    v_predicted = v_base
+    for t in range(1, VAR_PREDICTION_STEPS + 1):
+        # GDP impact with multiplier decay
+        gdp_impact = sum(
+            quarterly_spending * FISCAL_MULTIPLIER
+            * (MVPY_MULTIPLIER_DECAY_RATE ** (t - 1 - s))
+            / NOMINAL_GDP * 100
+            for s in range(t)
+        )
+
+        # V adjustment
+        max_impact = abs(gap_pct)
+        if max_impact > 0:
+            impact_fraction = min(gdp_impact / max_impact, 1.0) if gdp_impact > 0 else 0.0
+        else:
+            impact_fraction = 0.0
+        v_new = v_base * (1.0 + v_change_rate * impact_fraction)
+        v_predicted = v_new
+
+        # Inflation from MV=PY
+        new_nominal_gdp = money_supply * v_new
+        y_new = NOMINAL_GDP * (1.0 + gdp_impact / 100.0)
+        if y_new > 0:
+            p_ratio = (new_nominal_gdp / y_new) / (NOMINAL_GDP / NOMINAL_GDP)
+            mvpy_inflation = (p_ratio - 1.0) * 100.0
+        else:
+            mvpy_inflation = 0.0
+        predicted_inflation = baseline_inflation + mvpy_inflation
+
+        # Fisher equation
+        predicted_rate = r_real + predicted_inflation
+        predicted_rate = max(predicted_rate, 0.0)
+
+        # PPP exchange rate
+        inflation_diff = predicted_inflation - MVPY_US_INFLATION_PCT
+        rate_diff = predicted_rate - BASELINE_JGB_10Y
+        predicted_fx = BASELINE_USDJPY + inflation_diff * 2.0 - rate_diff * UIP_SENSITIVITY
+
+        interest_predictions.append({
+            "date": future_q[t - 1], "predicted_jgb_10y": round(predicted_rate, 2), "type": "prediction"
+        })
+        exchange_predictions.append({
+            "date": future_q[t - 1], "predicted_usdjpy": round(predicted_fx, 1), "type": "prediction"
+        })
+        gdp_impact_predictions.append({
+            "date": future_q[t - 1], "predicted_gdp_change_percent": round(gdp_impact, 4), "type": "prediction"
+        })
+        inflation_predictions.append({
+            "date": future_q[t - 1], "predicted_inflation_percent": round(predicted_inflation, 2), "type": "prediction"
+        })
+
+    return {
+        "current_gap": {
+            "gdp_gap_percent": gap_pct,
+            "gdp_gap_trillion_yen": gap_trillion,
+        },
+        "required_fiscal_spending": {
+            "amount_trillion_yen": round(required_spending, 1),
+            "multiplier": FISCAL_MULTIPLIER,
+            "note": _build_spending_note(required_spending),
+            "gap_fill_percent": 100.0,
+        },
+        "impact_prediction": {
+            "interest_rate": interest_predictions,
+            "exchange_rate": exchange_predictions,
+            "gdp_impact": gdp_impact_predictions,
+            "inflation_prediction": inflation_predictions,
+            "model": "MV=PY",
+            "engine": "mvpy",
+            "assumptions": {
+                "fiscal_multiplier": FISCAL_MULTIPLIER,
+                "nominal_gdp_trillion_yen": NOMINAL_GDP,
+                "baseline_jgb_10y": BASELINE_JGB_10Y,
+                "baseline_usdjpy": BASELINE_USDJPY,
+                "baseline_inflation": baseline_inflation,
+                "multiplier_decay_rate": MVPY_MULTIPLIER_DECAY_RATE,
+                "money_supply_trillion": round(money_supply, 1),
+                "velocity_base": round(v_base, 4),
+                "velocity_predicted": round(v_predicted, 4),
+            },
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# NKPC (New Keynesian Phillips Curve) — pure-Python 版
+# ---------------------------------------------------------------------------
+
+NKPC_BETA = 0.99
+NKPC_OMEGA = 0.5
+NKPC_INFLATION_TARGET = 2.0
+NKPC_ADAPTIVE_DECAY = 0.8
+NKPC_NATURAL_REAL_RATE = 0.5
+NKPC_TAYLOR_INFL_COEFF = 0.5
+NKPC_TAYLOR_OUTPUT_COEFF = 0.5
+NKPC_MULTIPLIER_DECAY_RATE = 0.85
+
+
+def generate_prediction_nkpc(method="maximum"):
+    """NKPC エンジンの静的JSON生成。"""
+    # Phillips curve slope estimation
+    pc_slope, pc_r2, pc_n, pc_se = _estimate_phillips_slope_static(method)
+    kappa = pc_slope
+
+    # Get GDP gap
+    gdp_gap_data = generate_gdp_gap()
+    if method == "cabinet_office":
+        gap_pct = gdp_gap_data["cabinet_office"]["data"][-1]["gdp_gap_percent"]
+    elif method == "average":
+        gap_pct = gdp_gap_data["estimated_average"]["data"][-1]["gdp_gap_percent"]
+    elif method == "civilian":
+        gap_pct = gdp_gap_data["estimated_civilian"]["data"][-1]["gdp_gap_percent"]
+    else:
+        gap_pct = gdp_gap_data["estimated_maximum"]["data"][-1]["gdp_gap_percent"]
+    gap_trillion = round(gap_pct / 100.0 * NOMINAL_GDP, 1)
+
+    required_spending = -gap_trillion / FISCAL_MULTIPLIER
+    quarterly_spending = required_spending / 4
+
+    baseline_inflation = MOCK_INFLATION[-1]["cpi_core_core"] if MOCK_INFLATION else BASELINE_INFLATION_FALLBACK
+
+    # Build predictions
+    quarters_panel, _ = _build_panel_static(method)
+    if not quarters_panel:
+        quarters_panel = QUARTERS[-4:]
+    future_q = _build_future_quarters(quarters_panel[-1], VAR_PREDICTION_STEPS)
+
+    interest_predictions = [
+        {"date": quarters_panel[-1], "predicted_jgb_10y": round(BASELINE_JGB_10Y, 2), "type": "actual"}
+    ]
+    exchange_predictions = [
+        {"date": quarters_panel[-1], "predicted_usdjpy": round(BASELINE_USDJPY, 1), "type": "actual"}
+    ]
+    gdp_impact_predictions = [
+        {"date": quarters_panel[-1], "predicted_gdp_change_percent": 0.0, "type": "actual"}
+    ]
+    inflation_predictions = [
+        {"date": quarters_panel[-1], "predicted_inflation_percent": round(baseline_inflation, 2), "type": "actual"}
+    ]
+
+    pi_prev = baseline_inflation
+
+    for t in range(1, VAR_PREDICTION_STEPS + 1):
+        # GDP impact with multiplier decay
+        gdp_impact = sum(
+            quarterly_spending * FISCAL_MULTIPLIER
+            * (NKPC_MULTIPLIER_DECAY_RATE ** (t - 1 - s))
+            / NOMINAL_GDP * 100
+            for s in range(t)
+        )
+
+        gap_t = gap_pct + gdp_impact
+
+        # Hybrid expectation
+        adaptive = NKPC_ADAPTIVE_DECAY * pi_prev + (1.0 - NKPC_ADAPTIVE_DECAY) * baseline_inflation
+        fiscal_infl_effect = kappa * gdp_impact
+        forward = NKPC_INFLATION_TARGET + fiscal_infl_effect
+        e_pi_next = NKPC_OMEGA * forward + (1.0 - NKPC_OMEGA) * adaptive
+
+        # NKPC
+        pi_t = NKPC_BETA * e_pi_next + kappa * gap_t
+
+        # Taylor rule
+        taylor_rate = (
+            NKPC_NATURAL_REAL_RATE
+            + pi_t
+            + NKPC_TAYLOR_INFL_COEFF * (pi_t - NKPC_INFLATION_TARGET)
+            + NKPC_TAYLOR_OUTPUT_COEFF * gap_t
+        )
+        taylor_rate = max(taylor_rate, 0.0)
+
+        # UIP
+        rate_diff = taylor_rate - BASELINE_JGB_10Y
+        predicted_fx = BASELINE_USDJPY - rate_diff * UIP_SENSITIVITY
+
+        interest_predictions.append({
+            "date": future_q[t - 1], "predicted_jgb_10y": round(taylor_rate, 2), "type": "prediction"
+        })
+        exchange_predictions.append({
+            "date": future_q[t - 1], "predicted_usdjpy": round(predicted_fx, 1), "type": "prediction"
+        })
+        gdp_impact_predictions.append({
+            "date": future_q[t - 1], "predicted_gdp_change_percent": round(gdp_impact, 4), "type": "prediction"
+        })
+        inflation_predictions.append({
+            "date": future_q[t - 1], "predicted_inflation_percent": round(pi_t, 2), "type": "prediction"
+        })
+
+        pi_prev = pi_t
+
+    return {
+        "current_gap": {
+            "gdp_gap_percent": gap_pct,
+            "gdp_gap_trillion_yen": gap_trillion,
+        },
+        "required_fiscal_spending": {
+            "amount_trillion_yen": round(required_spending, 1),
+            "multiplier": FISCAL_MULTIPLIER,
+            "note": _build_spending_note(required_spending),
+            "gap_fill_percent": 100.0,
+        },
+        "impact_prediction": {
+            "interest_rate": interest_predictions,
+            "exchange_rate": exchange_predictions,
+            "gdp_impact": gdp_impact_predictions,
+            "inflation_prediction": inflation_predictions,
+            "model": "NKPC",
+            "engine": "nkpc",
+            "assumptions": {
+                "fiscal_multiplier": FISCAL_MULTIPLIER,
+                "nominal_gdp_trillion_yen": NOMINAL_GDP,
+                "baseline_jgb_10y": BASELINE_JGB_10Y,
+                "baseline_usdjpy": BASELINE_USDJPY,
+                "baseline_inflation": baseline_inflation,
+                "multiplier_decay_rate": NKPC_MULTIPLIER_DECAY_RATE,
+                "phillips_curve_slope": pc_slope,
+                "phillips_r_squared": pc_r2,
+                "phillips_n_obs": pc_n,
+                "phillips_std_error": pc_se,
+                "discount_factor": NKPC_BETA,
+                "kappa": round(kappa, 4),
+                "forward_weight": NKPC_OMEGA,
+                "inflation_target": NKPC_INFLATION_TARGET,
+            },
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1630,12 +1913,14 @@ def main():
         "prediction-civilian.json": generate_prediction("civilian"),
         "inflation.json": inflation,
     }
-    # 統計モデル（VAR / BVAR / AR(1) / RW）の事前計算 JSON
+    # 統計モデル（VAR / BVAR / AR(1) / RW / MV=PY / NKPC）の事前計算 JSON
     for m in ("maximum", "average", "cabinet_office", "civilian"):
         files[f"prediction-{m}-var.json"] = generate_prediction_var(m)
         files[f"prediction-{m}-bvar.json"] = generate_prediction_bvar(m)
         files[f"prediction-{m}-ar1.json"] = generate_prediction_ar1(m)
         files[f"prediction-{m}-rw.json"] = generate_prediction_rw(m)
+        files[f"prediction-{m}-mvpy.json"] = generate_prediction_mvpy(m)
+        files[f"prediction-{m}-nkpc.json"] = generate_prediction_nkpc(m)
         # IS-LM も engine 明示版を追加（フロントの統一読み込みに対応）
         files[f"prediction-{m}-is_lm.json"] = generate_prediction(m)
 

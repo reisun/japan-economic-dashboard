@@ -410,6 +410,22 @@ async def get_prediction(
         return await get_rw_prediction(
             method=method, gap_fill_percent=gap_fill_percent
         )
+    if engine == "mvpy":
+        from app.services.mvpy_service import get_mvpy_prediction
+
+        return await get_mvpy_prediction(
+            method=method,
+            gap_fill_percent=gap_fill_percent,
+            uip_sensitivity=uip_sensitivity,
+        )
+    if engine == "nkpc":
+        from app.services.nkpc_service import get_nkpc_prediction
+
+        return await get_nkpc_prediction(
+            method=method,
+            gap_fill_percent=gap_fill_percent,
+            uip_sensitivity=uip_sensitivity,
+        )
 
     # IS-LM (デフォルト)
     if method not in VALID_METHODS:
