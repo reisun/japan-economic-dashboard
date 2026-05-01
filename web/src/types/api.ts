@@ -164,6 +164,8 @@ export interface PredictionResponse {
       n_steps?: number | null;
       variables?: string[] | null;
       lambda_tightness?: number | null;
+      phillips_prior_slope?: number | null;
+      implied_phillips_slope?: number | null;
     };
     irf?: IrfPoint[] | null;
   };

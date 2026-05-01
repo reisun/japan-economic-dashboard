@@ -211,6 +211,7 @@
         "cpi_core_core"
       ],
       "fiscal_multiplier": 1.0,
+      "implied_phillips_slope": -0.0032,
       "multiplier_decay_rate": null
     },
     "irf": [

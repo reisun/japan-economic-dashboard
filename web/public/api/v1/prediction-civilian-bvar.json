@@ -132,7 +132,7 @@
       },
       {
         "date": "2026-Q1",
-        "predicted_gdp_change_percent": 0.0258,
+        "predicted_gdp_change_percent": 0.0257,
         "type": "prediction"
       },
       {
@@ -212,6 +212,8 @@
       ],
       "fiscal_multiplier": 1.0,
       "lambda_tightness": 0.2,
+      "phillips_prior_slope": 0.0858,
+      "implied_phillips_slope": 0.0362,
       "multiplier_decay_rate": null
     },
     "irf": [
@@ -227,14 +229,14 @@
         "gdp_gap": 0.078,
         "jgb_10y": -0.006,
         "usdjpy": -0.1,
-        "cpi_core_core": 0.0057
+        "cpi_core_core": 0.0058
       },
       {
         "horizon": 2,
         "gdp_gap": 0.028,
         "jgb_10y": -0.004,
         "usdjpy": -0.067,
-        "cpi_core_core": 0.0031
+        "cpi_core_core": 0.0032
       },
       {
         "horizon": 3,
