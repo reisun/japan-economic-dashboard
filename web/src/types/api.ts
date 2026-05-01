@@ -103,8 +103,8 @@ export interface PredictionExchangePoint {
   type: "actual" | "prediction";
 }
 
-/** 予測エンジン: is_lm (構造) | var (VAR) | ar1 (AR(1) ベンチマーク) */
-export type PredictionEngine = "is_lm" | "var" | "ar1";
+/** 予測エンジン: is_lm (構造) | var (VAR) | bvar (Bayesian VAR) | ar1 (AR(1)) | rw (Random Walk) */
+export type PredictionEngine = "is_lm" | "var" | "ar1" | "bvar" | "rw";
 
 export interface GdpImpactPoint {
   date: string;
@@ -160,6 +160,7 @@ export interface PredictionResponse {
       n_obs?: number | null;
       n_steps?: number | null;
       variables?: string[] | null;
+      lambda_tightness?: number | null;
     };
     irf?: IrfPoint[] | null;
   };
