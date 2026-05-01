@@ -558,12 +558,80 @@ NOMINAL_GDP = 560.0
 BASELINE_JGB_10Y = 0.85
 BASELINE_USDJPY = 150.0
 UIP_SENSITIVITY = 2.0
-PHILLIPS_CURVE_SLOPE = 0.3
+PHILLIPS_CURVE_SLOPE_FALLBACK = 0.3
 BASELINE_INFLATION_FALLBACK = 2.0
 PREDICTION_QUARTERS = ["2025-Q1", "2025-Q2", "2025-Q3", "2025-Q4"]
 
 
+def _estimate_phillips_slope_static(method="maximum"):
+    """Estimate Phillips curve slope via OLS (pure Python, no numpy).
+
+    Regression: CPI_yoy = beta0 + alpha * GDP_gap + epsilon
+    Returns (alpha, r_squared, n_obs, std_error).
+    Falls back to (0.3, None, 0, None) on failure.
+    """
+    fallback = (PHILLIPS_CURVE_SLOPE_FALLBACK, None, 0, None)
+
+    # Get GDP gap data for method
+    gdp_gap_data = generate_gdp_gap()
+    if method == "cabinet_office":
+        gap_series = gdp_gap_data["cabinet_office"]["data"]
+    elif method == "average":
+        gap_series = gdp_gap_data["estimated_average"]["data"]
+    elif method == "civilian":
+        gap_series = gdp_gap_data["estimated_civilian"]["data"]
+    else:
+        gap_series = gdp_gap_data["estimated_maximum"]["data"]
+
+    gap_q = {p["date"]: float(p["gdp_gap_percent"]) for p in gap_series}
+    cpi_q = {
+        p["date"]: float(p["cpi_core_core"])
+        for p in MOCK_INFLATION
+        if p.get("cpi_core_core") is not None
+    }
+
+    common = sorted(set(gap_q) & set(cpi_q))
+    n = len(common)
+    if n < 3:
+        return fallback
+
+    gaps = [gap_q[q] for q in common]
+    cpis = [cpi_q[q] for q in common]
+
+    # OLS: CPI = beta0 + alpha * gap
+    sum_x = sum(gaps)
+    sum_y = sum(cpis)
+    sum_xx = sum(x * x for x in gaps)
+    sum_xy = sum(gaps[i] * cpis[i] for i in range(n))
+
+    denom = n * sum_xx - sum_x * sum_x
+    if abs(denom) < 1e-12:
+        return fallback
+
+    alpha = (n * sum_xy - sum_x * sum_y) / denom
+    beta0 = (sum_y - alpha * sum_x) / n
+
+    # R-squared
+    mean_y = sum_y / n
+    ss_tot = sum((y - mean_y) ** 2 for y in cpis)
+    ss_res = sum((cpis[i] - beta0 - alpha * gaps[i]) ** 2 for i in range(n))
+    r_squared = round(1.0 - ss_res / ss_tot, 4) if ss_tot > 0 else 0.0
+
+    # Standard error of alpha
+    std_error = None
+    if n > 2:
+        mse = ss_res / (n - 2)
+        var_alpha = mse * n / denom
+        std_error = round(var_alpha ** 0.5, 4)
+
+    alpha = round(alpha, 4)
+    return (alpha, r_squared, n, std_error)
+
+
 def generate_prediction(method="maximum"):
+    # Estimate Phillips curve slope from data
+    pc_slope, pc_r2, pc_n, pc_se = _estimate_phillips_slope_static(method)
+
     # Get GDP gap based on method
     gdp_gap_data = generate_gdp_gap()
     if method == "cabinet_office":
@@ -625,7 +693,7 @@ def generate_prediction(method="maximum"):
         inflation_predictions.append({
             "date": PREDICTION_QUARTERS[i],
             "predicted_inflation_percent": round(
-                baseline_inflation + PHILLIPS_CURVE_SLOPE * (gap_pct + total_gdp_change_pct * frac),
+                baseline_inflation + pc_slope * (gap_pct + total_gdp_change_pct * frac),
                 2,
             ),
             "type": "actual" if i == 0 else "prediction",
@@ -657,7 +725,10 @@ def generate_prediction(method="maximum"):
                 "money_demand_elasticity": MONEY_DEMAND_ELASTICITY,
                 "investment_sensitivity": INVESTMENT_SENSITIVITY,
                 "fiscal_multiplier": FISCAL_MULTIPLIER,
-                "phillips_curve_slope": PHILLIPS_CURVE_SLOPE,
+                "phillips_curve_slope": pc_slope,
+                "phillips_r_squared": pc_r2,
+                "phillips_n_obs": pc_n,
+                "phillips_std_error": pc_se,
                 "baseline_inflation": baseline_inflation,
                 "multiplier_decay_rate": None,
             },

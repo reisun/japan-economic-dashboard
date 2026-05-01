@@ -645,7 +645,12 @@ export function PredictionChart() {
             <div>ゼロ金利制約: {data.impact_prediction.assumptions.zlb_binding ? "有効（流動性の罠）" : "非拘束"}</div>
           )}
           {data.impact_prediction.assumptions.phillips_curve_slope != null && (
-            <div>フィリップス曲線の傾き: {data.impact_prediction.assumptions.phillips_curve_slope}</div>
+            <div>フィリップス曲線の傾き: {data.impact_prediction.assumptions.phillips_curve_slope}
+              {data.impact_prediction.assumptions.phillips_r_squared != null && (
+                <span> (R²={data.impact_prediction.assumptions.phillips_r_squared}
+                  {data.impact_prediction.assumptions.phillips_n_obs != null && `, n=${data.impact_prediction.assumptions.phillips_n_obs}`})</span>
+              )}
+            </div>
           )}
           {data.impact_prediction.assumptions.baseline_inflation != null && (
             <div>ベースラインインフレ率: {data.impact_prediction.assumptions.baseline_inflation}%</div>

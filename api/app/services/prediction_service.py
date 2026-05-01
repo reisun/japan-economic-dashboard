@@ -14,12 +14,16 @@ Nominal GDP is fetched dynamically from FRED (JPNNGDP) with a static fallback.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date
+
+import numpy as np
 
 from app.models.schemas import (
     Assumptions,
     CurrentGap,
     ExchangeRatePrediction,
+    GdpGapResponse,
     GdpImpactPoint,
     ImpactPrediction,
     InflationPredictionPoint,
@@ -87,9 +91,122 @@ UIP_SENSITIVITY = 2.0  # yen per percentage point
 
 # Phillips curve slope: sensitivity of inflation to GDP gap (percentage points)
 # Japan's empirical range is 0.1-0.5; 0.3 is a reasonable central estimate
-PHILLIPS_CURVE_SLOPE = 0.3
+PHILLIPS_CURVE_SLOPE = 0.3  # fallback when OLS estimation fails
 
 PREDICTION_YEARS_AHEAD = 2
+
+# ---------------------------------------------------------------------------
+# Phillips curve slope OLS estimation (per method, cached)
+# ---------------------------------------------------------------------------
+
+# Simple dict-based TTL cache for method-keyed results
+_phillips_cache: dict[str, tuple[float, tuple[float, float | None, int, float | None]]] = {}
+_PHILLIPS_CACHE_TTL = 3600  # 1 hour
+
+PhillipsSlopeResult = tuple[float, float | None, int, float | None]
+# (slope, r_squared, n_obs, std_error)
+
+
+def _estimate_phillips_slope(
+    method: str,
+    gdp_gap_data: GdpGapResponse | None,
+) -> PhillipsSlopeResult:
+    """Estimate Phillips curve slope via OLS for the given GDP gap method.
+
+    Regression: CPI_yoy = beta0 + alpha * GDP_gap + epsilon
+    Returns (alpha, R-squared, n_obs, std_error_of_alpha).
+    Falls back to (0.3, None, 0, None) on failure.
+    """
+    now = time.monotonic()
+    cache_key = method
+    if cache_key in _phillips_cache:
+        expires_at, result = _phillips_cache[cache_key]
+        if now < expires_at:
+            return result
+
+    fallback: PhillipsSlopeResult = (PHILLIPS_CURVE_SLOPE, None, 0, None)
+
+    if gdp_gap_data is None:
+        logger.warning("Phillips slope estimation: GDP gap data unavailable, using fallback")
+        return fallback
+
+    try:
+        from app.services.inflation_service import _fetch_cpi_core_core_yoy
+
+        # Get CPI quarterly data
+        cpi_q = _fetch_cpi_core_core_yoy()
+        if not cpi_q:
+            logger.warning("Phillips slope estimation: CPI data unavailable, using fallback")
+            return fallback
+
+        # Get GDP gap series for the given method
+        if method == "cabinet_office":
+            gap_series = gdp_gap_data.cabinet_office.data
+        elif method == "average":
+            gap_series = gdp_gap_data.estimated_average.data
+        elif method == "civilian":
+            gap_series = gdp_gap_data.estimated_civilian.data
+        else:  # maximum
+            gap_series = gdp_gap_data.estimated_maximum.data
+
+        gap_q = {pt.date: pt.gdp_gap_percent for pt in gap_series}
+
+        # Build paired data for common quarters
+        common_quarters = sorted(
+            set(gap_q.keys()) & set(cpi_q.keys()),
+        )
+        if len(common_quarters) < 3:
+            logger.warning(
+                "Phillips slope estimation: only %d common quarters, need >= 3, using fallback",
+                len(common_quarters),
+            )
+            return fallback
+
+        gaps = np.array([gap_q[q] for q in common_quarters])
+        cpis = np.array([cpi_q[q] for q in common_quarters])
+        n = len(gaps)
+
+        # OLS: CPI = beta0 + alpha * gap
+        X = np.column_stack([np.ones(n), gaps])
+        # beta = (X'X)^-1 X'y
+        XtX = X.T @ X
+        Xty = X.T @ cpis
+        beta = np.linalg.solve(XtX, Xty)
+        alpha = float(beta[1])
+
+        # Residuals and R-squared
+        y_hat = X @ beta
+        residuals = cpis - y_hat
+        ss_res = float(np.sum(residuals ** 2))
+        ss_tot = float(np.sum((cpis - np.mean(cpis)) ** 2))
+        r_squared = round(1.0 - ss_res / ss_tot, 4) if ss_tot > 0 else 0.0
+
+        # Standard error of alpha
+        if n > 2:
+            mse = ss_res / (n - 2)
+            var_beta = mse * np.linalg.inv(XtX)
+            std_error = round(float(np.sqrt(var_beta[1, 1])), 4)
+        else:
+            std_error = None
+
+        alpha = round(alpha, 4)
+
+        logger.info(
+            "Phillips slope estimated (method=%s): alpha=%.4f, R2=%.4f, n=%d, se=%.4f",
+            method,
+            alpha,
+            r_squared,
+            n,
+            std_error if std_error is not None else 0.0,
+        )
+
+        result = (alpha, r_squared, n, std_error)
+        _phillips_cache[cache_key] = (now + _PHILLIPS_CACHE_TTL, result)
+        return result
+
+    except Exception:
+        logger.exception("Phillips slope estimation failed, using fallback")
+        return fallback
 
 
 @cached("baseline_inflation")
@@ -308,6 +425,7 @@ async def get_prediction(
     baseline_jgb, baseline_fx = _get_latest_rates()
 
     # Get latest GDP gap estimate
+    gdp_gap_data: GdpGapResponse | None = None
     try:
         gdp_gap_data = await get_gdp_gap()
         if method == "cabinet_office":
@@ -373,6 +491,9 @@ async def get_prediction(
         for i, (q, impact) in enumerate(zip(quarters, gdp_impacts_pct))
     ]
 
+    # Estimate Phillips curve slope from data (method-specific)
+    pc_slope, pc_r2, pc_n, pc_se = _estimate_phillips_slope(method, gdp_gap_data)
+
     # Phillips curve inflation prediction: fiscal policy change drives inflation change.
     # Current inflation already reflects current gap, so only the fiscal impact matters.
     baseline_inflation = _get_baseline_inflation()
@@ -380,7 +501,7 @@ async def get_prediction(
         InflationPredictionPoint(
             date=q,
             predicted_inflation_percent=round(
-                baseline_inflation + PHILLIPS_CURVE_SLOPE * impact,
+                baseline_inflation + pc_slope * impact,
                 2,
             ),
             type="actual" if i == 0 else "prediction",
@@ -416,7 +537,10 @@ async def get_prediction(
                 baseline_usdjpy=baseline_fx,
                 zlb_binding=zlb_binding,
                 multiplier_decay_rate=MULTIPLIER_DECAY_RATE,
-                phillips_curve_slope=PHILLIPS_CURVE_SLOPE,
+                phillips_curve_slope=pc_slope,
+                phillips_r_squared=pc_r2,
+                phillips_n_obs=pc_n,
+                phillips_std_error=pc_se,
                 baseline_inflation=baseline_inflation,
             ),
         ),

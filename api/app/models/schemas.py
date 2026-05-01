@@ -153,6 +153,9 @@ class Assumptions(BaseModel):
     multiplier_decay_rate: float | None = None
     # フィリップス曲線パラメータ
     phillips_curve_slope: float | None = None  # フィリップス曲線の傾き
+    phillips_r_squared: float | None = None  # OLS推定の決定係数
+    phillips_n_obs: int | None = None  # OLS推定のサンプル数
+    phillips_std_error: float | None = None  # OLS推定の傾き標準誤差
     baseline_inflation: float | None = None  # ベースラインインフレ率
     # 統計モデル用パラメータ
     lag_order: int | None = None
