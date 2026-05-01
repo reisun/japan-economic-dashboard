@@ -275,10 +275,22 @@ async def get_prediction(
         return await get_var_prediction(
             method=method, gap_fill_percent=gap_fill_percent
         )
+    if engine == "bvar":
+        from app.services.var_service import get_bvar_prediction
+
+        return await get_bvar_prediction(
+            method=method, gap_fill_percent=gap_fill_percent
+        )
     if engine == "ar1":
         from app.services.var_service import get_ar1_prediction
 
         return await get_ar1_prediction(
+            method=method, gap_fill_percent=gap_fill_percent
+        )
+    if engine == "rw":
+        from app.services.var_service import get_rw_prediction
+
+        return await get_rw_prediction(
             method=method, gap_fill_percent=gap_fill_percent
         )
 

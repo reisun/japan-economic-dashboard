@@ -1111,6 +1111,285 @@ def generate_prediction_ar1(method="maximum"):
 
 
 # ---------------------------------------------------------------------------
+# Bayesian VAR (Minnesota prior) — pure-Python 版
+# ---------------------------------------------------------------------------
+
+BVAR_DEFAULT_LAMBDA_STATIC = 0.2
+
+
+def _fit_bvar1_static(Y, lambda_=BVAR_DEFAULT_LAMBDA_STATIC):
+    """Bayesian VAR(1) with Minnesota prior. Pure Python 版。
+
+    Returns (c (k,), A (k,k)).
+    """
+    T = len(Y)
+    k = len(Y[0])
+    if T < 3:
+        return [0.0] * k, _eye(k, 0.0)
+
+    # 各変数の残差標準偏差（単変量 AR(1) の残差で近似）
+    sigma = [1.0] * k
+    for j in range(k):
+        col = [Y[t][j] for t in range(T)]
+        c_ar, phi_ar = _fit_ar1_static(col)
+        resid = [col[t] - c_ar - phi_ar * col[t - 1] for t in range(1, T)]
+        if len(resid) > 1:
+            mean_r = sum(resid) / len(resid)
+            var_r = sum((r - mean_r) ** 2 for r in resid) / (len(resid) - 1)
+            s = var_r ** 0.5
+            sigma[j] = max(s, 1e-8)
+
+    # X[(T-1) x (k+1)] = [1, Y_{t-1}], target Yt[t] = Y_{t}
+    X = [[1.0] + list(Y[t - 1]) for t in range(1, T)]
+    Yt = [list(Y[t]) for t in range(1, T)]
+    n_params = k + 1
+
+    # Prior precision (diagonal) と prior mean
+    prior_prec = [0.0] * n_params  # index 0 = 定数項 (uninformative)
+    prior_mean = [[0.0] * k for _ in range(n_params)]
+
+    for var_idx in range(k):
+        row = 1 + var_idx
+        # 自変数 lag-1: prior mean = 1, precision = lambda^2
+        prior_mean[row][var_idx] = 1.0
+        prior_prec[row] = lambda_ ** 2
+
+    # Lambda 対角行列
+    Lambda = [[prior_prec[i] if i == j else 0.0 for j in range(n_params)] for i in range(n_params)]
+
+    # X'X + Lambda
+    Xt = _transpose(X)
+    XtX = _matmul(Xt, X)
+    for i in range(n_params):
+        XtX[i][i] += prior_prec[i] + 1e-8
+
+    # X'Y + Lambda @ prior_mean
+    XtY = _matmul(Xt, Yt)
+    Lambda_mu = _matmul(Lambda, prior_mean)
+    rhs = [[XtY[i][j] + Lambda_mu[i][j] for j in range(k)] for i in range(n_params)]
+
+    B = _solve_matrix(XtX, rhs)  # (k+1, k)
+    c = list(B[0])
+    A = [[B[1 + i][j] for i in range(k)] for j in range(k)]
+
+    # 安定化（VAR と同じ行ノルムベース縮小）
+    row_norm = max(sum(abs(v) for v in row) for row in A)
+    if row_norm > 0.85:
+        s = 0.85 / row_norm
+        for i in range(k):
+            for j in range(k):
+                A[i][j] *= s
+        mean_y = [sum(row[j] for row in Y) / T for j in range(k)]
+        I_minus_As = [[(1.0 if i == j else 0.0) - A[i][j] for j in range(k)] for i in range(k)]
+        c = _matvec(I_minus_As, mean_y)
+    return c, A
+
+
+def generate_prediction_bvar(method="maximum"):
+    """Bayesian VAR(1) with Minnesota prior の静的JSON生成。"""
+    quarters, Y = _build_panel_static(method)
+    if not Y:
+        return generate_prediction(method)
+    T = len(Y)
+    c, A = _fit_bvar1_static(Y)
+
+    last_obs = Y[-1]
+    gap_pct = last_obs[0]
+    gap_trillion = round(gap_pct / 100.0 * VAR_NOMINAL_GDP, 1)
+    required_spending = -gap_trillion / FISCAL_MULTIPLIER
+
+    shock_gap_pct = required_spending / VAR_NOMINAL_GDP * 100.0 * FISCAL_MULTIPLIER
+    shock_vec = [shock_gap_pct, 0.0, 0.0, 0.0]
+
+    base_fc = _forecast_var1(last_obs, c, A, VAR_PREDICTION_STEPS)
+    shock_resp = _irf_var1(A, VAR_PREDICTION_STEPS - 1, shock_vec)
+    fc = [
+        [base_fc[i][j] + shock_resp[i][j] for j in range(4)]
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+
+    future_q = _build_future_quarters(quarters[-1], VAR_PREDICTION_STEPS)
+    interest_predictions = [
+        {"date": quarters[-1], "predicted_jgb_10y": round(last_obs[1], 2), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_jgb_10y": round(fc[i][1], 2), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+    exchange_predictions = [
+        {"date": quarters[-1], "predicted_usdjpy": round(last_obs[2], 1), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_usdjpy": round(fc[i][2], 1), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+    gdp_impact_predictions = [
+        {"date": quarters[-1], "predicted_gdp_change_percent": 0.0, "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_gdp_change_percent": round(fc[i][0] - base_fc[i][0], 4), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+    inflation_predictions = [
+        {"date": quarters[-1], "predicted_inflation_percent": round(last_obs[3], 2), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_inflation_percent": round(fc[i][3], 2), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+
+    # IRF
+    unit_shock = [1.0 / VAR_NOMINAL_GDP * 100.0, 0.0, 0.0, 0.0]
+    irf = _irf_var1(A, VAR_PREDICTION_STEPS, unit_shock)
+    irf_points = [
+        {
+            "horizon": h,
+            "gdp_gap": round(irf[h][0], 4),
+            "jgb_10y": round(irf[h][1], 4),
+            "usdjpy": round(irf[h][2], 3),
+            "cpi_core_core": round(irf[h][3], 4),
+        }
+        for h in range(VAR_PREDICTION_STEPS + 1)
+    ]
+
+    return {
+        "current_gap": {
+            "gdp_gap_percent": round(gap_pct, 2),
+            "gdp_gap_trillion_yen": gap_trillion,
+        },
+        "required_fiscal_spending": {
+            "amount_trillion_yen": round(required_spending, 1),
+            "multiplier": FISCAL_MULTIPLIER,
+            "note": _build_spending_note(required_spending),
+            "gap_fill_percent": 100.0,
+        },
+        "impact_prediction": {
+            "interest_rate": interest_predictions,
+            "exchange_rate": exchange_predictions,
+            "gdp_impact": gdp_impact_predictions,
+            "inflation_prediction": inflation_predictions,
+            "model": "BVAR(1)",
+            "engine": "bvar",
+            "assumptions": {
+                "lag_order": 1,
+                "n_obs": T,
+                "n_steps": VAR_PREDICTION_STEPS,
+                "variables": VARIABLE_NAMES_STATIC,
+                "fiscal_multiplier": FISCAL_MULTIPLIER,
+                "lambda_tightness": BVAR_DEFAULT_LAMBDA_STATIC,
+                "multiplier_decay_rate": None,
+            },
+            "irf": irf_points,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Random Walk with Drift — pure-Python 版
+# ---------------------------------------------------------------------------
+
+
+def _fit_rw_drift_static(y):
+    """Random Walk with Drift: mu = 1階差分の平均。"""
+    n = len(y)
+    if n < 2:
+        return 0.0
+    diffs = [y[t] - y[t - 1] for t in range(1, n)]
+    return sum(diffs) / len(diffs)
+
+
+def _forecast_rw_static(y0, mu, n_steps):
+    out = []
+    cur = float(y0)
+    for _ in range(n_steps):
+        cur = cur + mu
+        out.append(cur)
+    return out
+
+
+def generate_prediction_rw(method="maximum"):
+    """Random Walk with Drift の静的JSON生成。"""
+    quarters, Y = _build_panel_static(method)
+    if not Y:
+        return generate_prediction(method)
+    T = len(Y)
+    last_obs = Y[-1]
+    gap_pct = last_obs[0]
+    gap_trillion = round(gap_pct / 100.0 * VAR_NOMINAL_GDP, 1)
+    required_spending = -gap_trillion / FISCAL_MULTIPLIER
+
+    shock_gap_pct = required_spending / VAR_NOMINAL_GDP * 100.0 * FISCAL_MULTIPLIER
+
+    # 各変数のドリフト推定
+    drifts = []
+    for j in range(4):
+        col = [Y[t][j] for t in range(T)]
+        drifts.append(_fit_rw_drift_static(col))
+
+    # Baseline forecast (no shock)
+    fc_baseline = []
+    for j in range(4):
+        fc_baseline.append(_forecast_rw_static(last_obs[j], drifts[j], VAR_PREDICTION_STEPS))
+
+    # Shocked forecast: GDPギャップにショック永続注入
+    fc = [list(row) for row in zip(*fc_baseline)]  # transpose to (steps, 4)
+    for i in range(VAR_PREDICTION_STEPS):
+        fc[i][0] += shock_gap_pct  # RW: phi=1 なのでショック永続
+
+    future_q = _build_future_quarters(quarters[-1], VAR_PREDICTION_STEPS)
+    interest_predictions = [
+        {"date": quarters[-1], "predicted_jgb_10y": round(last_obs[1], 2), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_jgb_10y": round(fc[i][1], 2), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+    exchange_predictions = [
+        {"date": quarters[-1], "predicted_usdjpy": round(last_obs[2], 1), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_usdjpy": round(fc[i][2], 1), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+    gdp_impact_predictions = [
+        {"date": quarters[-1], "predicted_gdp_change_percent": 0.0, "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_gdp_change_percent": round(fc[i][0] - fc_baseline[0][i], 4), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+    # RW: 変数間波及なし → インフレはベースライン
+    inflation_predictions = [
+        {"date": quarters[-1], "predicted_inflation_percent": round(last_obs[3], 2), "type": "actual"}
+    ] + [
+        {"date": future_q[i], "predicted_inflation_percent": round(fc_baseline[3][i], 2), "type": "prediction"}
+        for i in range(VAR_PREDICTION_STEPS)
+    ]
+
+    return {
+        "current_gap": {
+            "gdp_gap_percent": round(gap_pct, 2),
+            "gdp_gap_trillion_yen": gap_trillion,
+        },
+        "required_fiscal_spending": {
+            "amount_trillion_yen": round(required_spending, 1),
+            "multiplier": FISCAL_MULTIPLIER,
+            "note": _build_spending_note(required_spending),
+            "gap_fill_percent": 100.0,
+        },
+        "impact_prediction": {
+            "interest_rate": interest_predictions,
+            "exchange_rate": exchange_predictions,
+            "gdp_impact": gdp_impact_predictions,
+            "inflation_prediction": inflation_predictions,
+            "model": "Random Walk",
+            "engine": "rw",
+            "assumptions": {
+                "lag_order": 1,
+                "n_obs": T,
+                "n_steps": VAR_PREDICTION_STEPS,
+                "variables": VARIABLE_NAMES_STATIC,
+                "fiscal_multiplier": FISCAL_MULTIPLIER,
+                "multiplier_decay_rate": None,
+            },
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Inflation data
 # ---------------------------------------------------------------------------
 # CPIコアコア（生鮮食品・エネルギー除く= 世界標準 core CPI） / GDPデフレータ /
@@ -1261,10 +1540,12 @@ def main():
         "prediction-civilian.json": generate_prediction("civilian"),
         "inflation.json": inflation,
     }
-    # 統計モデル（VAR / AR(1)）の事前計算 JSON
+    # 統計モデル（VAR / BVAR / AR(1) / RW）の事前計算 JSON
     for m in ("maximum", "average", "cabinet_office", "civilian"):
         files[f"prediction-{m}-var.json"] = generate_prediction_var(m)
+        files[f"prediction-{m}-bvar.json"] = generate_prediction_bvar(m)
         files[f"prediction-{m}-ar1.json"] = generate_prediction_ar1(m)
+        files[f"prediction-{m}-rw.json"] = generate_prediction_rw(m)
         # IS-LM も engine 明示版を追加（フロントの統一読み込みに対応）
         files[f"prediction-{m}-is_lm.json"] = generate_prediction(m)
 

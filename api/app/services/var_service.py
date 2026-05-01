@@ -551,6 +551,448 @@ async def get_var_prediction(
 
 
 # ---------------------------------------------------------------------------
+# Bayesian VAR (Minnesota prior) 推定
+# ---------------------------------------------------------------------------
+
+BVAR_DEFAULT_LAMBDA = 0.2
+
+
+def _fit_bvar(
+    Y: np.ndarray, p: int, lambda_: float = BVAR_DEFAULT_LAMBDA
+) -> tuple[np.ndarray, np.ndarray]:
+    """Bayesian VAR(p) with Minnesota prior.
+
+    Minnesota prior の考え方:
+    - 各変数の自身の1次ラグ係数の事前平均 = 1（ランダムウォーク prior）
+    - 高次ラグ・他変数からの影響の事前平均 = 0
+    - lambda_ で全体的な tightness（正則化強度）を制御
+    - クロス変数の縮小は各変数の残差分散比で調整
+
+    実装:
+      OLS: B = (X'X)^{-1} X'Y
+      BVAR: B = (X'X + Lambda)^{-1} (X'Y + Lambda @ mu)
+      Lambda = prior precision (diagonal), mu = prior mean
+
+    Returns
+    -------
+    c : (k,)              切片ベクトル
+    A : (p, k, k)         ラグ係数（A[i] = A_{i+1}）
+    """
+    T, k = Y.shape
+    if T <= p + 1:
+        return Y[-1], np.zeros((p, k, k))
+
+    n = T - p
+    # 説明変数行列 X: (n, k*p + 1)  — 同じ構造を _fit_var と共有
+    X = np.ones((n, k * p + 1))
+    for i in range(p):
+        X[:, 1 + i * k : 1 + (i + 1) * k] = Y[p - 1 - i : T - 1 - i]
+    Yt = Y[p:]  # (n, k)
+
+    # 各変数の残差標準偏差（単変量 AR(1) の残差で近似）
+    sigma = np.ones(k)
+    for j in range(k):
+        yj = Y[:, j]
+        if len(yj) >= 3:
+            y_lag = yj[:-1]
+            y_now = yj[1:]
+            Xj = np.column_stack([np.ones_like(y_lag), y_lag])
+            try:
+                beta_j, *_ = np.linalg.lstsq(Xj, y_now, rcond=None)
+                resid = y_now - Xj @ beta_j
+                s = float(np.std(resid, ddof=1)) if len(resid) > 1 else 1.0
+                sigma[j] = max(s, 1e-8)
+            except np.linalg.LinAlgError:
+                pass
+
+    # Prior precision (diagonal) と prior mean の構築
+    # B の構造: row 0 = 定数項, rows 1..k*p = ラグ係数
+    # B[1 + i*k + j, :] は lag-(i+1) の変数 j の係数行
+    n_params = k * p + 1
+    prior_precision = np.zeros(n_params)
+    prior_mean = np.zeros((n_params, k))
+
+    # 定数項: tightness なし（uninformative）
+    prior_precision[0] = 0.0
+
+    for lag_idx in range(p):
+        for var_idx in range(k):
+            row = 1 + lag_idx * k + var_idx
+            lag_num = lag_idx + 1  # 1-indexed lag
+
+            for eq_idx in range(k):
+                if var_idx == eq_idx:
+                    # 自変数のラグ: tightness = (lambda / lag_num)^2
+                    prec = (lambda_ / lag_num) ** 2
+                    # 事前平均: lag=1 の自変数 = 1, それ以外 = 0
+                    if lag_num == 1:
+                        prior_mean[row, eq_idx] = 1.0
+                else:
+                    # クロス変数: tightness をさらに分散比で縮小
+                    # (lambda / lag_num * sigma_eq / sigma_var)^2
+                    prec = (lambda_ / lag_num * sigma[eq_idx] / sigma[var_idx]) ** 2
+
+            # precision は全方程式で共通の対角要素（最も保守的な値を使用）
+            # 簡略化: 自変数基準の precision を使用
+            prior_precision[row] = (lambda_ / (lag_idx + 1)) ** 2
+
+    # Lambda 行列（対角）
+    Lambda = np.diag(prior_precision)
+
+    # X'X + Lambda
+    XtX = X.T @ X
+    XtY = X.T @ Yt
+
+    # Bayesian 推定: B = (X'X + Lambda)^{-1} (X'Y + Lambda @ mu)
+    try:
+        reg = 1e-8 * np.eye(n_params)
+        B = np.linalg.solve(XtX + Lambda + reg, XtY + Lambda @ prior_mean)
+    except np.linalg.LinAlgError:
+        B = np.linalg.lstsq(XtX + Lambda, XtY + Lambda @ prior_mean, rcond=None)[0]
+
+    c = B[0]  # (k,)
+    A = np.zeros((p, k, k))
+    for i in range(p):
+        A[i] = B[1 + i * k : 1 + (i + 1) * k].T
+
+    # 安定化（OLS-VAR と同じ）
+    A, c = _stabilize(A, c, Y)
+    return c, A
+
+
+# ---------------------------------------------------------------------------
+# Public API: BVAR 予測
+# ---------------------------------------------------------------------------
+
+
+async def get_bvar_prediction(
+    method: str = "maximum",
+    gap_fill_percent: float | None = None,
+) -> PredictionResponse:
+    """Bayesian VAR (Minnesota prior) による予測。
+
+    OLS-VAR と同じ枠組みだが Minnesota prior による正則化で
+    小サンプルでの過学習を抑制する。
+    gap_fill_percent: GDPギャップの何%を埋める財政政策か (0-150%)
+    """
+    if method not in VALID_METHODS:
+        method = "maximum"
+
+    effective_gap_fill = gap_fill_percent if gap_fill_percent is not None else DEFAULT_GAP_FILL_PERCENT
+
+    quarters, Y = await _build_panel(method)
+    T, k = Y.shape
+
+    # ラグ次数の決定（OLS-VAR と同じロジック）
+    max_p_by_dof = max(1, (T - 8) // (k * 2))
+    p = max(1, min(VAR_LAG_ORDER, max_p_by_dof))
+    c, A = _fit_bvar(Y, p, lambda_=BVAR_DEFAULT_LAMBDA)
+
+    # ベースライン予測
+    fc = _forecast_var(Y, c, A, PREDICTION_STEPS)
+
+    # 直近観測値
+    last_obs = Y[-1]
+    gap_pct = float(last_obs[0])
+    nominal_gdp = _get_nominal_gdp()
+    gap_trillion = round(gap_pct / 100.0 * nominal_gdp, 1)
+
+    # 財政支出シナリオ
+    annual_spending = -gap_trillion / FISCAL_MULTIPLIER * effective_gap_fill / 100
+    annual_shock_pct = annual_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
+    shock_vec = np.zeros(k)
+    shock_vec[0] = annual_shock_pct
+    cumulative_response = np.zeros((PREDICTION_STEPS, k))
+    for inject_q in [0, 4]:
+        if inject_q >= PREDICTION_STEPS:
+            continue
+        remaining = PREDICTION_STEPS - 1 - inject_q
+        irf_from_inject = _compute_irf(A, remaining, shock_vec)
+        for h in range(remaining + 1):
+            cumulative_response[inject_q + h] += irf_from_inject[h]
+    fc_with_shock = fc + cumulative_response
+
+    # 予測四半期
+    future_q = _build_future_quarters(quarters[-1], PREDICTION_STEPS)
+    rate_predictions = [
+        InterestRatePrediction(
+            date=quarters[-1],
+            predicted_jgb_10y=round(float(last_obs[1]), 2),
+            type="actual",
+        )
+    ] + [
+        InterestRatePrediction(
+            date=future_q[i],
+            predicted_jgb_10y=round(float(fc_with_shock[i, 1]), 2),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+    fx_predictions = [
+        ExchangeRatePrediction(
+            date=quarters[-1],
+            predicted_usdjpy=round(float(last_obs[2]), 1),
+            type="actual",
+        )
+    ] + [
+        ExchangeRatePrediction(
+            date=future_q[i],
+            predicted_usdjpy=round(float(fc_with_shock[i, 2]), 1),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+
+    gdp_impact_predictions = [
+        GdpImpactPoint(
+            date=quarters[-1],
+            predicted_gdp_change_percent=0.0,
+            type="actual",
+        )
+    ] + [
+        GdpImpactPoint(
+            date=future_q[i],
+            predicted_gdp_change_percent=round(
+                float(fc_with_shock[i, 0] - fc[i, 0]), 4
+            ),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+
+    inflation_predictions = [
+        InflationPredictionPoint(
+            date=quarters[-1],
+            predicted_inflation_percent=round(float(last_obs[3]), 2),
+            type="actual",
+        )
+    ] + [
+        InflationPredictionPoint(
+            date=future_q[i],
+            predicted_inflation_percent=round(float(fc_with_shock[i, 3]), 2),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+
+    # IRF（+1兆円の財政拡張ショック）
+    unit_shock = np.zeros(k)
+    unit_shock[0] = 1.0 / nominal_gdp * 100.0
+    irf_arr = _compute_irf(A, PREDICTION_STEPS, unit_shock)
+    irf_points = [
+        IrfPoint(
+            horizon=h,
+            gdp_gap=round(float(irf_arr[h, 0]), 4),
+            jgb_10y=round(float(irf_arr[h, 1]), 4),
+            usdjpy=round(float(irf_arr[h, 2]), 3),
+            cpi_core_core=round(float(irf_arr[h, 3]), 4),
+        )
+        for h in range(PREDICTION_STEPS + 1)
+    ]
+
+    return PredictionResponse(
+        current_gap=CurrentGap(
+            gdp_gap_percent=round(gap_pct, 2),
+            gdp_gap_trillion_yen=gap_trillion,
+        ),
+        required_fiscal_spending=RequiredFiscalSpending(
+            amount_trillion_yen=round(annual_spending, 1),
+            multiplier=FISCAL_MULTIPLIER,
+            note=_build_spending_note(annual_spending, effective_gap_fill),
+            gap_fill_percent=effective_gap_fill,
+        ),
+        impact_prediction=ImpactPrediction(
+            interest_rate=rate_predictions,
+            exchange_rate=fx_predictions,
+            gdp_impact=gdp_impact_predictions,
+            inflation_prediction=inflation_predictions,
+            model=f"BVAR({p})",
+            engine="bvar",
+            assumptions=Assumptions(
+                lag_order=p,
+                n_obs=T,
+                n_steps=PREDICTION_STEPS,
+                variables=VARIABLE_NAMES,
+                fiscal_multiplier=FISCAL_MULTIPLIER,
+                lambda_tightness=BVAR_DEFAULT_LAMBDA,
+            ),
+            irf=irf_points,
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public API: Random Walk with Drift
+# ---------------------------------------------------------------------------
+
+
+def _fit_rw_drift(y: np.ndarray) -> float:
+    """Random Walk with Drift: y_t = y_{t-1} + mu + e_t
+
+    mu = サンプル平均の1階差分。
+
+    Returns
+    -------
+    mu : float  ドリフト項
+    """
+    n = len(y)
+    if n < 2:
+        return 0.0
+    diffs = np.diff(y)
+    return float(np.mean(diffs))
+
+
+def _forecast_rw(y0: float, mu: float, n_steps: int) -> list[float]:
+    """Random Walk with Drift の予測。"""
+    out = []
+    cur = y0
+    for _ in range(n_steps):
+        cur = cur + mu
+        out.append(cur)
+    return out
+
+
+async def get_rw_prediction(
+    method: str = "maximum",
+    gap_fill_percent: float | None = None,
+) -> PredictionResponse:
+    """Random Walk with Drift: 各変数を独立に予測。
+
+    y_t = y_{t-1} + mu（mu = 1階差分の平均）
+    最も単純なベンチマーク。「明日は今日と同じ + トレンド」仮説。
+    財政ショックは GDPギャップに加えた後、ドリフトに従って推移（変数間波及なし）。
+    gap_fill_percent: GDPギャップの何%を埋める財政政策か (0-150%)
+    """
+    if method not in VALID_METHODS:
+        method = "maximum"
+
+    effective_gap_fill = gap_fill_percent if gap_fill_percent is not None else DEFAULT_GAP_FILL_PERCENT
+
+    quarters, Y = await _build_panel(method)
+    T, k = Y.shape
+
+    nominal_gdp = _get_nominal_gdp()
+    last_obs = Y[-1].copy()
+    gap_pct = float(last_obs[0])
+    gap_trillion = round(gap_pct / 100.0 * nominal_gdp, 1)
+
+    annual_spending = -gap_trillion / FISCAL_MULTIPLIER * effective_gap_fill / 100
+    annual_shock_pct = annual_spending / nominal_gdp * 100.0 * FISCAL_MULTIPLIER
+
+    # 各変数のドリフト推定
+    drifts: list[float] = []
+    for j in range(k):
+        mu = _fit_rw_drift(Y[:, j])
+        drifts.append(mu)
+
+    # Baseline forecast (no shock)
+    fc_baseline = np.zeros((PREDICTION_STEPS, k))
+    for j in range(k):
+        fc_baseline[:, j] = _forecast_rw(float(last_obs[j]), drifts[j], PREDICTION_STEPS)
+
+    # Shocked forecast: GDPギャップにショックを注入、その後はドリフトで推移
+    # 年1回（Q0, Q4）に年間支出額を一括注入
+    fc = fc_baseline.copy()
+    for inject_q in [0, 4]:
+        if inject_q >= PREDICTION_STEPS:
+            continue
+        # RW なので phi=1: ショック効果は永続（ドリフトに乗るだけ）
+        for t in range(inject_q, PREDICTION_STEPS):
+            fc[t, 0] += annual_shock_pct
+
+    future_q = _build_future_quarters(quarters[-1], PREDICTION_STEPS)
+    rate_predictions = [
+        InterestRatePrediction(
+            date=quarters[-1],
+            predicted_jgb_10y=round(float(last_obs[1]), 2),
+            type="actual",
+        )
+    ] + [
+        InterestRatePrediction(
+            date=future_q[i],
+            predicted_jgb_10y=round(float(fc[i, 1]), 2),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+    fx_predictions = [
+        ExchangeRatePrediction(
+            date=quarters[-1],
+            predicted_usdjpy=round(float(last_obs[2]), 1),
+            type="actual",
+        )
+    ] + [
+        ExchangeRatePrediction(
+            date=future_q[i],
+            predicted_usdjpy=round(float(fc[i, 2]), 1),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+
+    gdp_impact_predictions = [
+        GdpImpactPoint(
+            date=quarters[-1],
+            predicted_gdp_change_percent=0.0,
+            type="actual",
+        )
+    ] + [
+        GdpImpactPoint(
+            date=future_q[i],
+            predicted_gdp_change_percent=round(
+                float(fc[i, 0] - fc_baseline[i, 0]), 4
+            ),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+
+    # RW は変数間波及なし → インフレはベースライン予測を使用
+    inflation_predictions = [
+        InflationPredictionPoint(
+            date=quarters[-1],
+            predicted_inflation_percent=round(float(last_obs[3]), 2),
+            type="actual",
+        )
+    ] + [
+        InflationPredictionPoint(
+            date=future_q[i],
+            predicted_inflation_percent=round(float(fc_baseline[i, 3]), 2),
+            type="prediction",
+        )
+        for i in range(PREDICTION_STEPS)
+    ]
+
+    return PredictionResponse(
+        current_gap=CurrentGap(
+            gdp_gap_percent=round(gap_pct, 2),
+            gdp_gap_trillion_yen=gap_trillion,
+        ),
+        required_fiscal_spending=RequiredFiscalSpending(
+            amount_trillion_yen=round(annual_spending, 1),
+            multiplier=FISCAL_MULTIPLIER,
+            note=_build_spending_note(annual_spending, effective_gap_fill),
+            gap_fill_percent=effective_gap_fill,
+        ),
+        impact_prediction=ImpactPrediction(
+            interest_rate=rate_predictions,
+            exchange_rate=fx_predictions,
+            gdp_impact=gdp_impact_predictions,
+            inflation_prediction=inflation_predictions,
+            model="Random Walk",
+            engine="rw",
+            assumptions=Assumptions(
+                lag_order=1,
+                n_obs=T,
+                n_steps=PREDICTION_STEPS,
+                variables=VARIABLE_NAMES,
+                fiscal_multiplier=FISCAL_MULTIPLIER,
+            ),
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Public API: AR(1) ベースライン
 # ---------------------------------------------------------------------------
 

@@ -53,13 +53,17 @@ const METHOD_LABEL: Record<GdpGapMethod, string> = {
 const ENGINE_LABEL: Record<PredictionEngine, string> = {
   is_lm: "IS-LM（構造モデル）",
   var: "VAR（統計モデル）",
+  bvar: "BVAR（ベイズVAR）",
   ar1: "AR(1)（ベンチマーク）",
+  rw: "RW（ランダムウォーク）",
 };
 
 const ENGINE_DESCRIPTION: Record<PredictionEngine, string> = {
   is_lm: "マクロ経済理論に基づく構造モデル。財政乗数・流動性選好・UIPの理論式から金利・為替への波及を計算します。",
   var: "Vector Autoregression: 過去データから多変量の動学を推定する統計モデル。実データに観察された関係性を反映します。",
+  bvar: "Bayesian VAR: Minnesota prior による正則化を加えた VAR。小サンプルでの過学習を抑制し、安定した予測を提供します。",
   ar1: "AR(1): 各変数を前期値だけで個別に予測するベンチマーク。最も単純なため、他モデルの精度比較の基準になります。",
+  rw: "Random Walk with Drift: 各変数を前期値+ドリフトで予測する最も単純なモデル。「明日は今日と同じ」仮説のベンチマーク。",
 };
 
 const DEBOUNCE_MS = 500;
@@ -212,7 +216,9 @@ export function PredictionChart() {
   const engineOptions: { key: PredictionEngine; label: string }[] = [
     { key: "is_lm", label: ENGINE_LABEL.is_lm },
     { key: "var", label: ENGINE_LABEL.var },
+    { key: "bvar", label: ENGINE_LABEL.bvar },
     { key: "ar1", label: ENGINE_LABEL.ar1 },
+    { key: "rw", label: ENGINE_LABEL.rw },
   ];
 
   const renderEngineSelector = () => (
@@ -659,19 +665,22 @@ export function PredictionChart() {
           {data.impact_prediction.assumptions.variables && data.impact_prediction.assumptions.variables.length > 0 && (
             <div>変数: {data.impact_prediction.assumptions.variables.join(", ")}</div>
           )}
+          {data.impact_prediction.assumptions.lambda_tightness != null && (
+            <div>Minnesota prior tightness (lambda): {data.impact_prediction.assumptions.lambda_tightness}</div>
+          )}
           {data.current_gap.gdp_gap_trillion_yen != null && (
             <div>名目GDPギャップ: {data.current_gap.gdp_gap_trillion_yen}兆円</div>
           )}
         </div>
       </details>
 
-      {engine === "var" && data.impact_prediction.irf && (
+      {(engine === "var" || engine === "bvar") && data.impact_prediction.irf && (
         <div className="mt-6 pt-4 border-t border-gray-200">
           <h3 className="text-sm font-medium text-gray-700 mb-1">
             インパルス応答（+1兆円財政拡張ショック）
           </h3>
           <p className="text-xs text-gray-500 mb-2">
-            VAR から推定したショック応答。0期目に GDPギャップが乗数効果分シフトしたとき、
+            {engine === "bvar" ? "BVAR" : "VAR"} から推定したショック応答。0期目に GDPギャップが乗数効果分シフトしたとき、
             その後のホライズンで JGB金利・USD/JPY・コアコアCPI がどう動くか（自由応答）。
           </p>
           <div className="overflow-x-auto">
