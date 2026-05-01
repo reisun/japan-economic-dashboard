@@ -166,6 +166,15 @@ class Assumptions(BaseModel):
     lambda_tightness: float | None = None
     phillips_prior_slope: float | None = None  # BVAR の CPI 方程式に使った prior α
     implied_phillips_slope: float | None = None  # IRF から逆算した暗黙の α
+    # MV=PY (貨幣数量説) 用パラメータ
+    money_supply_trillion: float | None = None  # マネーサプライ M2（兆円）
+    velocity_base: float | None = None  # ベースライン流通速度 V_base
+    velocity_predicted: float | None = None  # 予測流通速度 V_new
+    # NKPC (ニューケインジアン・フィリップス曲線) 用パラメータ
+    discount_factor: float | None = None  # 割引因子 β
+    kappa: float | None = None  # ギャップ感応度 κ
+    forward_weight: float | None = None  # 前方視的ウェイト ω
+    inflation_target: float | None = None  # インフレ目標 π*
 
 
 class GdpImpactPoint(BaseModel):

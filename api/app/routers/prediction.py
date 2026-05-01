@@ -11,7 +11,7 @@ from app.services.prediction_service import (
 router = APIRouter()
 
 
-VALID_ENGINES = ("is_lm", "var", "ar1", "bvar", "rw")
+VALID_ENGINES = ("is_lm", "var", "ar1", "bvar", "rw", "mvpy", "nkpc")
 
 
 @router.get("/prediction", response_model=PredictionResponse)
@@ -30,7 +30,8 @@ async def prediction(
         "is_lm",
         description=(
             "予測エンジン: is_lm (構造モデル, デフォルト) | var (VAR) | "
-            "bvar (Bayesian VAR) | ar1 (AR(1)) | rw (Random Walk)"
+            "bvar (Bayesian VAR) | ar1 (AR(1)) | rw (Random Walk) | "
+            "mvpy (MV=PY 貨幣数量説) | nkpc (NKフィリップス曲線)"
         ),
     ),
     uip_sensitivity: float | None = Query(
