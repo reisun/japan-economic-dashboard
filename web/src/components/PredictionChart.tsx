@@ -56,6 +56,8 @@ const ENGINE_LABEL: Record<PredictionEngine, string> = {
   bvar: "BVAR（ベイズVAR）",
   ar1: "AR(1)（ベンチマーク）",
   rw: "RW（ランダムウォーク）",
+  mvpy: "MV=PY（貨幣数量説）",
+  nkpc: "NKPC（NKフィリップス曲線）",
 };
 
 const ENGINE_DESCRIPTION: Record<PredictionEngine, string> = {
@@ -64,6 +66,8 @@ const ENGINE_DESCRIPTION: Record<PredictionEngine, string> = {
   bvar: "Bayesian VAR: Minnesota prior による正則化を加えた VAR。小サンプルでの過学習を抑制し、安定した予測を提供します。",
   ar1: "AR(1): 各変数を前期値だけで個別に予測するベンチマーク。最も単純なため、他モデルの精度比較の基準になります。",
   rw: "Random Walk with Drift: 各変数を前期値+ドリフトで予測する最も単純なモデル。「明日は今日と同じ」仮説のベンチマーク。",
+  mvpy: "貨幣数量説 (MV=PY) に基づく構造モデル。マネーサプライと流通速度から名目GDPとインフレ率を予測します。Vの変化はGDPギャップ充足度に比例します。",
+  nkpc: "ニューケインジアン・フィリップス曲線に基づく構造モデル。適応的期待と前方視的期待のハイブリッドで将来インフレを予測し、テイラールールで金利を決定します。",
 };
 
 const DEBOUNCE_MS = 500;
@@ -215,6 +219,8 @@ export function PredictionChart() {
 
   const engineOptions: { key: PredictionEngine; label: string }[] = [
     { key: "is_lm", label: ENGINE_LABEL.is_lm },
+    { key: "mvpy", label: ENGINE_LABEL.mvpy },
+    { key: "nkpc", label: ENGINE_LABEL.nkpc },
     { key: "var", label: ENGINE_LABEL.var },
     { key: "bvar", label: ENGINE_LABEL.bvar },
     { key: "ar1", label: ENGINE_LABEL.ar1 },
@@ -309,7 +315,7 @@ export function PredictionChart() {
   };
 
   const renderUipPanel = () => {
-    if (engine !== "is_lm") return null;
+    if (engine !== "is_lm" && engine !== "mvpy" && engine !== "nkpc") return null;
     const disabled = STATIC_MODE;
     const displayUip = uipInput ?? UIP_DEFAULT;
     return (
@@ -678,6 +684,27 @@ export function PredictionChart() {
           )}
           {data.impact_prediction.assumptions.implied_phillips_slope != null && (
             <div>IRF暗黙のフィリップス曲線傾き: {data.impact_prediction.assumptions.implied_phillips_slope}</div>
+          )}
+          {data.impact_prediction.assumptions.money_supply_trillion != null && (
+            <div>マネーサプライ (M2): {data.impact_prediction.assumptions.money_supply_trillion}兆円</div>
+          )}
+          {data.impact_prediction.assumptions.velocity_base != null && (
+            <div>流通速度 (V_base): {data.impact_prediction.assumptions.velocity_base}</div>
+          )}
+          {data.impact_prediction.assumptions.velocity_predicted != null && (
+            <div>予測流通速度 (V): {data.impact_prediction.assumptions.velocity_predicted}</div>
+          )}
+          {data.impact_prediction.assumptions.discount_factor != null && (
+            <div>割引因子 (beta): {data.impact_prediction.assumptions.discount_factor}</div>
+          )}
+          {data.impact_prediction.assumptions.kappa != null && (
+            <div>ギャップ感応度 (kappa): {data.impact_prediction.assumptions.kappa}</div>
+          )}
+          {data.impact_prediction.assumptions.forward_weight != null && (
+            <div>前方視的ウェイト (omega): {data.impact_prediction.assumptions.forward_weight}</div>
+          )}
+          {data.impact_prediction.assumptions.inflation_target != null && (
+            <div>インフレ目標 (pi*): {data.impact_prediction.assumptions.inflation_target}%</div>
           )}
           {data.current_gap.gdp_gap_trillion_yen != null && (
             <div>名目GDPギャップ: {data.current_gap.gdp_gap_trillion_yen}兆円</div>
