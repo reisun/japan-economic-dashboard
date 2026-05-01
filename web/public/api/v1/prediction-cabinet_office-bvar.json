@@ -1,0 +1,283 @@
+{
+  "current_gap": {
+    "gdp_gap_percent": -2.0,
+    "gdp_gap_trillion_yen": -11.2
+  },
+  "required_fiscal_spending": {
+    "amount_trillion_yen": 11.2,
+    "multiplier": 1.0,
+    "note": "デフレギャップ解消に必要な財政支出",
+    "gap_fill_percent": 100.0
+  },
+  "impact_prediction": {
+    "interest_rate": [
+      {
+        "date": "2024-Q4",
+        "predicted_jgb_10y": 0.92,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_jgb_10y": 0.88,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_jgb_10y": 0.83,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_jgb_10y": 0.86,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_jgb_10y": 0.87,
+        "type": "prediction"
+      }
+    ],
+    "exchange_rate": [
+      {
+        "date": "2024-Q4",
+        "predicted_usdjpy": 153.2,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_usdjpy": 152.6,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_usdjpy": 151.8,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_usdjpy": 152.4,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_usdjpy": 152.5,
+        "type": "prediction"
+      }
+    ],
+    "gdp_impact": [
+      {
+        "date": "2024-Q4",
+        "predicted_gdp_change_percent": 0.0,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_gdp_change_percent": 2.0,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_gdp_change_percent": 0.3264,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_gdp_change_percent": 0.0288,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_gdp_change_percent": -0.0005,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_gdp_change_percent": -0.0008,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_gdp_change_percent": -0.0002,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_gdp_change_percent": -0.0,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_gdp_change_percent": -0.0,
+        "type": "prediction"
+      }
+    ],
+    "inflation_prediction": [
+      {
+        "date": "2024-Q4",
+        "predicted_inflation_percent": 2.2,
+        "type": "actual"
+      },
+      {
+        "date": "2025-Q1",
+        "predicted_inflation_percent": 2.15,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q2",
+        "predicted_inflation_percent": 2.11,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q3",
+        "predicted_inflation_percent": 2.13,
+        "type": "prediction"
+      },
+      {
+        "date": "2025-Q4",
+        "predicted_inflation_percent": 2.14,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q1",
+        "predicted_inflation_percent": 2.14,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q2",
+        "predicted_inflation_percent": 2.14,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q3",
+        "predicted_inflation_percent": 2.14,
+        "type": "prediction"
+      },
+      {
+        "date": "2026-Q4",
+        "predicted_inflation_percent": 2.14,
+        "type": "prediction"
+      }
+    ],
+    "model": "BVAR(1)",
+    "engine": "bvar",
+    "assumptions": {
+      "lag_order": 1,
+      "n_obs": 12,
+      "n_steps": 8,
+      "variables": [
+        "gdp_gap",
+        "jgb_10y",
+        "usdjpy",
+        "cpi_core_core"
+      ],
+      "fiscal_multiplier": 1.0,
+      "lambda_tightness": 0.2,
+      "multiplier_decay_rate": null
+    },
+    "irf": [
+      {
+        "horizon": 0,
+        "gdp_gap": 0.1786,
+        "jgb_10y": 0.0,
+        "usdjpy": 0.0,
+        "cpi_core_core": 0.0
+      },
+      {
+        "horizon": 1,
+        "gdp_gap": 0.0291,
+        "jgb_10y": -0.0042,
+        "usdjpy": -0.07,
+        "cpi_core_core": -0.0033
+      },
+      {
+        "horizon": 2,
+        "gdp_gap": 0.0026,
+        "jgb_10y": -0.0008,
+        "usdjpy": -0.014,
+        "cpi_core_core": -0.0011
+      },
+      {
+        "horizon": 3,
+        "gdp_gap": -0.0,
+        "jgb_10y": -0.0001,
+        "usdjpy": -0.002,
+        "cpi_core_core": -0.0002
+      },
+      {
+        "horizon": 4,
+        "gdp_gap": -0.0001,
+        "jgb_10y": -0.0,
+        "usdjpy": -0.0,
+        "cpi_core_core": -0.0
+      },
+      {
+        "horizon": 5,
+        "gdp_gap": -0.0,
+        "jgb_10y": 0.0,
+        "usdjpy": 0.0,
+        "cpi_core_core": -0.0
+      },
+      {
+        "horizon": 6,
+        "gdp_gap": -0.0,
+        "jgb_10y": 0.0,
+        "usdjpy": 0.0,
+        "cpi_core_core": -0.0
+      },
+      {
+        "horizon": 7,
+        "gdp_gap": -0.0,
+        "jgb_10y": 0.0,
+        "usdjpy": 0.0,
+        "cpi_core_core": 0.0
+      },
+      {
+        "horizon": 8,
+        "gdp_gap": -0.0,
+        "jgb_10y": 0.0,
+        "usdjpy": 0.0,
+        "cpi_core_core": 0.0
+      }
+    ]
+  }
+}
