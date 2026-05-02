@@ -44,7 +44,7 @@ from app.models.schemas import (
 )
 from app.services.gdp_gap_service import get_gdp_gap
 from app.services.inflation_service import get_inflation
-from app.services.prediction_service import _estimate_phillips_slope, _get_nominal_gdp
+from app.services.prediction_common import _estimate_phillips_slope, _get_nominal_gdp
 from app.services.rates_service import get_rates
 
 logger = logging.getLogger(__name__)
@@ -563,6 +563,62 @@ async def get_var_prediction(
 BVAR_DEFAULT_LAMBDA = 0.2
 
 
+def _build_minnesota_prior(
+    k: int, p: int, lambda_: float, sigma: np.ndarray,
+    phillips_slope: float | None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Minnesota prior の precision と mean を構築。
+
+    Parameters
+    ----------
+    k : int            変数数
+    p : int            ラグ次数
+    lambda_ : float    tightness パラメータ
+    sigma : (k,)       各変数の残差標準偏差
+    phillips_slope : float | None
+        フィリップス曲線 prior（CPI方程式の GDP_gap lag-1 係数の事前平均）
+
+    Returns
+    -------
+    prior_precision : (k*p+1,)    対角要素
+    prior_mean : (k*p+1, k)      事前平均行列
+    """
+    n_params = k * p + 1
+    prior_precision = np.zeros(n_params)
+    prior_mean = np.zeros((n_params, k))
+
+    # 定数項: tightness なし（uninformative）
+    prior_precision[0] = 0.0
+
+    for lag_idx in range(p):
+        for var_idx in range(k):
+            row = 1 + lag_idx * k + var_idx
+            lag_num = lag_idx + 1  # 1-indexed lag
+
+            for eq_idx in range(k):
+                if var_idx == eq_idx:
+                    # 自変数のラグ: tightness = (lambda / lag_num)^2
+                    prec = (lambda_ / lag_num) ** 2
+                    # 事前平均: lag=1 の自変数 = 1, それ以外 = 0
+                    if lag_num == 1:
+                        prior_mean[row, eq_idx] = 1.0
+                else:
+                    # クロス変数: tightness をさらに分散比で縮小
+                    # (lambda / lag_num * sigma_eq / sigma_var)^2
+                    prec = (lambda_ / lag_num * sigma[eq_idx] / sigma[var_idx]) ** 2
+
+                # フィリップス曲線 prior: CPI方程式(eq=3) の GDP_gap(var=0) lag-1
+                if (phillips_slope is not None
+                        and lag_num == 1 and var_idx == 0 and eq_idx == 3):
+                    prior_mean[row, eq_idx] = phillips_slope
+
+            # precision は全方程式で共通の対角要素（最も保守的な値を使用）
+            # 簡略化: 自変数基準の precision を使用
+            prior_precision[row] = (lambda_ / (lag_idx + 1)) ** 2
+
+    return prior_precision, prior_mean
+
+
 def _fit_bvar(
     Y: np.ndarray, p: int, lambda_: float = BVAR_DEFAULT_LAMBDA,
     phillips_slope: float | None = None,
@@ -612,43 +668,13 @@ def _fit_bvar(
             except np.linalg.LinAlgError:
                 pass
 
-    # Prior precision (diagonal) と prior mean の構築
-    # B の構造: row 0 = 定数項, rows 1..k*p = ラグ係数
-    # B[1 + i*k + j, :] は lag-(i+1) の変数 j の係数行
-    n_params = k * p + 1
-    prior_precision = np.zeros(n_params)
-    prior_mean = np.zeros((n_params, k))
-
-    # 定数項: tightness なし（uninformative）
-    prior_precision[0] = 0.0
-
-    for lag_idx in range(p):
-        for var_idx in range(k):
-            row = 1 + lag_idx * k + var_idx
-            lag_num = lag_idx + 1  # 1-indexed lag
-
-            for eq_idx in range(k):
-                if var_idx == eq_idx:
-                    # 自変数のラグ: tightness = (lambda / lag_num)^2
-                    prec = (lambda_ / lag_num) ** 2
-                    # 事前平均: lag=1 の自変数 = 1, それ以外 = 0
-                    if lag_num == 1:
-                        prior_mean[row, eq_idx] = 1.0
-                else:
-                    # クロス変数: tightness をさらに分散比で縮小
-                    # (lambda / lag_num * sigma_eq / sigma_var)^2
-                    prec = (lambda_ / lag_num * sigma[eq_idx] / sigma[var_idx]) ** 2
-
-                # フィリップス曲線 prior: CPI方程式(eq=3) の GDP_gap(var=0) lag-1
-                if (phillips_slope is not None
-                        and lag_num == 1 and var_idx == 0 and eq_idx == 3):
-                    prior_mean[row, eq_idx] = phillips_slope
-
-            # precision は全方程式で共通の対角要素（最も保守的な値を使用）
-            # 簡略化: 自変数基準の precision を使用
-            prior_precision[row] = (lambda_ / (lag_idx + 1)) ** 2
+    # Prior 構築
+    prior_precision, prior_mean = _build_minnesota_prior(
+        k, p, lambda_, sigma, phillips_slope,
+    )
 
     # Lambda 行列（対角）
+    n_params = k * p + 1
     Lambda = np.diag(prior_precision)
 
     # X'X + Lambda

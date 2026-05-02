@@ -41,7 +41,7 @@ from app.models.schemas import (
 from app.services.cache import cached
 from app.services.data_utils import fetch_fred_series
 from app.services.gdp_gap_service import get_gdp_gap
-from app.services.prediction_service import (
+from app.services.prediction_common import (
     DEFAULT_GAP_FILL_PERCENT,
     FISCAL_MULTIPLIER,
     MULTIPLIER_DECAY_RATE,
