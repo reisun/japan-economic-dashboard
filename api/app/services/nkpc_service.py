@@ -35,7 +35,7 @@ from app.models.schemas import (
     RequiredFiscalSpending,
 )
 from app.services.gdp_gap_service import get_gdp_gap
-from app.services.prediction_service import (
+from app.services.prediction_common import (
     DEFAULT_GAP_FILL_PERCENT,
     FISCAL_MULTIPLIER,
     MULTIPLIER_DECAY_RATE,
