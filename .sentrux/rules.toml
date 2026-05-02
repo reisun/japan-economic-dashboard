@@ -1,0 +1,14 @@
+# Sentrux architectural quality rules
+# See: https://sentrux.dev/docs/rules
+
+[scan]
+exclude = [
+  "node_modules",
+  ".git",
+  ".venv",
+  "__pycache__",
+  "dist",
+  "build",
+  ".claude",
+  ".sentrux",
+]
