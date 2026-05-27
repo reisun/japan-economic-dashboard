@@ -1,0 +1,10 @@
+services:
+  api:
+    networks:
+      japan-economic-dashboard-net:
+        aliases:
+          - japan-economic-dashboard-api
+
+networks:
+  japan-economic-dashboard-net:
+    external: true
