@@ -1,10 +1,6 @@
+import { getApiBaseUrl } from "../runtime-config";
 import { useState, useEffect } from "react";
 import type { ApiState } from "../types/api";
-
-// Use VITE_API_BASE_URL if set, otherwise default to production API
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  "https://reisun.asuscomm.com/japan-economic-dashboard/api/v1";
 
 // 静的JSON配信モード（GitHub Pages 等）。`.json` 拡張子付きパスを使うと判定。
 export const STATIC_MODE =
@@ -12,7 +8,7 @@ export const STATIC_MODE =
 
 function buildUrl(path: string): string {
   const cleanPath = path.startsWith("/") ? path.slice(1) : path;
-  return `${API_BASE}/${cleanPath}`;
+  return `${getApiBaseUrl()}/${cleanPath}`;
 }
 
 export function useApi<T>(path: string): ApiState<T> {

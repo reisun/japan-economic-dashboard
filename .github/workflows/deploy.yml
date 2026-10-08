@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: Quick Tunnel API base URL for this deployment
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -29,8 +34,22 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run build
+      - name: Write runtime API config
         env:
-          VITE_API_BASE_URL: https://reisun.asuscomm.com/japan-economic-dashboard/api/v1
+          QUICK_TUNNEL_URL: ${{ inputs.api_base_url || vars.QUICK_TUNNEL_URL }}
+        run: |
+          node --input-type=module <<'JS'
+          import { writeFileSync } from 'node:fs';
+          const value = process.env.QUICK_TUNNEL_URL?.trim() || '';
+          if (value) {
+            const url = new URL(value);
+            if (url.protocol !== 'https:' || !url.hostname.endsWith('.trycloudflare.com') || url.username || url.password || url.search || url.hash) {
+              throw new Error('QUICK_TUNNEL_URL must be an HTTPS Quick Tunnel API base URL');
+            }
+          }
+          writeFileSync('dist/config.json', JSON.stringify({ apiBaseUrl: value }, null, 2) + '\n');
+          JS
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: web/dist
